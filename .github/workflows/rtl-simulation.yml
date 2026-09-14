@@ -1,0 +1,28 @@
+name: Verify RTL milestones
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  self-checking-simulations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Verify programmable pin generator
+        run: |
+          iverilog -g2012 -s pin_generator_tb -o pin_generator_tb.out pin_generator.sv pin_generator_tb.sv
+          vvp pin_generator_tb.out | tee pin_generator.log
+          grep -q "PASS: timing, enable pause, and zero-cycle safety verified" pin_generator.log
+
+      - name: Verify UART transmitter
+        run: |
+          iverilog -g2012 -s uart_tx_tb -o uart_tx_tb.out uart_tx.sv uart_tx_tb.sv
+          vvp uart_tx_tb.out | tee uart_tx.log
+          grep -q "PASS: UART transmitted 0x55 and 0xA3 correctly" uart_tx.log

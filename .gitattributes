@@ -1,0 +1,4 @@
+*.sv text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+LICENSE text eol=lf
