@@ -1,4 +1,6 @@
-# Jane Street Protocol Emulator ASIC
+# Dhruva Uppaluri - JaneStreetASIC
+
+[![Verify RTL milestones](https://github.com/dhruvauppaluri/Dhruva-Uppaluri-JaneStreetASIC/actions/workflows/rtl-simulation.yml/badge.svg)](https://github.com/dhruvauppaluri/Dhruva-Uppaluri-JaneStreetASIC/actions/workflows/rtl-simulation.yml)
 
 An open-source, cycle-accurate protocol emulator in SystemVerilog, developed in
 response to Jane Street's [protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/).
