@@ -12,6 +12,7 @@ incremental_db/
 output_files/
 *.qws
 *.smsg
+c5_pin_model_dump.txt
 
 # Editor and backup files
 .sigasi/

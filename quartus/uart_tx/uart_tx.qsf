@@ -1,0 +1,16 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEMA5F31C6
+set_global_assignment -name TOP_LEVEL_ENTITY uart_tx
+set_global_assignment -name SYSTEMVERILOG_FILE ../../uart_tx.sv
+set_global_assignment -name SDC_FILE uart_tx.sdc
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
+
+set_instance_assignment -name VIRTUAL_PIN ON -to reset
+set_instance_assignment -name VIRTUAL_PIN ON -to start
+set_instance_assignment -name VIRTUAL_PIN ON -to data[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to tx
+set_instance_assignment -name VIRTUAL_PIN ON -to busy
+set_instance_assignment -name VIRTUAL_PIN ON -to done
+
+set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"

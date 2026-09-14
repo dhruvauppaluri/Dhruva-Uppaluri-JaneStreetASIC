@@ -27,6 +27,23 @@ input clock. The pin-generator test covers 5-cycle and 3-cycle timing, a
 safe-idle behavior. The UART test verifies two complete 10-bit frames in
 20.096 microseconds of simulation time.
 
+## Cyclone V implementation results
+
+Both RTL blocks compile, fit, and pass setup and hold timing at 100 MHz for the
+Cyclone V `5CSEMA5F31C6` in Quartus Prime Lite 25.1. The values below come from
+the final timing model at the slow 1100 mV, 85 C corner.
+
+| Block | ALMs | Registers | RAM bits | DSPs | Setup slack at 100 MHz | Hold slack | Fmax |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Programmable pin generator | 11 / 32,070 (<1%) | 7 | 0 | 0 | +4.621 ns | +0.368 ns | 185.91 MHz |
+| UART transmitter | 32 / 32,070 (<1%) | 40 | 0 | 0 | +3.265 ns | +0.340 ns | 148.48 MHz |
+
+The clock is fitted to a device pin and constrained to a 10 ns period. Data and
+control ports are virtual pins because this repository does not yet target a
+specific development-board pinout. The internal logic utilization and
+register-to-register timing are valid for this device; board-level I/O timing
+must be measured again after assigning the real board pins and I/O standards.
+
 ## Architecture
 
 ```mermaid
@@ -68,6 +85,8 @@ design step; gray blocks show the complete target architecture.
 | `pin_generator_tb.sv` | Self-checking timing, enable, and safety tests |
 | `uart_tx.sv` | Parameterized 8N1 UART transmitter |
 | `uart_tx_tb.sv` | Self-checking two-frame UART test |
+| `quartus/pin_generator/` | Reproducible Cyclone V project and 100 MHz timing constraint |
+| `quartus/uart_tx/` | Reproducible Cyclone V project and 100 MHz timing constraint |
 
 ## Run the simulations
 
@@ -91,6 +110,19 @@ PASS: UART transmitted 0x55 and 0xA3 correctly
 
 GitHub Actions also runs both self-checking simulations on every push with
 Icarus Verilog.
+
+## Run the Cyclone V builds
+
+With Quartus Prime Lite 25.1 on `PATH`, run:
+
+```powershell
+quartus_sh --flow compile quartus/pin_generator/pin_generator
+quartus_sh --flow compile quartus/uart_tx/uart_tx
+```
+
+The generated `db`, `incremental_db`, and `output_files` directories are
+ignored by Git. The reports in each `output_files` directory contain the fitted
+resource and timing results.
 
 ## Design details
 
@@ -121,7 +153,7 @@ Icarus Verilog.
 - [ ] Express UART transmission as a program
 - [ ] Add pin sampling and conditional branches
 - [ ] Demonstrate SPI and I2C programs on the same engine
-- [ ] Synthesize for Cyclone V and track logic, register, memory, and Fmax data
+- [x] Synthesize for Cyclone V and track logic, register, memory, and Fmax data
 - [ ] Port to the Tiny Tapeout IHP 130 nm CMOS5L flow
 
 ## Today's milestone — September 14, 2026
@@ -130,6 +162,8 @@ Icarus Verilog.
 - Verified a 4-clock pause with exact continuation from the saved count.
 - Added deterministic zero-cycle safe-idle behavior.
 - Implemented and verified two 1 Mbit/s UART frames with automated checks.
+- Fit both blocks for a Cyclone V `5CSEMA5F31C6` and closed timing at 100 MHz
+  across every analyzed setup and hold corner.
 
 ## License
 
