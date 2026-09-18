@@ -2,7 +2,7 @@
 
 [![Verify RTL milestones](https://github.com/dhruvauppaluri/Dhruva-Uppaluri-JaneStreetASIC/actions/workflows/rtl-simulation.yml/badge.svg)](https://github.com/dhruvauppaluri/Dhruva-Uppaluri-JaneStreetASIC/actions/workflows/rtl-simulation.yml)
 
-An open-source, cycle-accurate protocol emulator in SystemVerilog, developed in
+An open-source, cycle-accurate protocol emulator in Verilog, developed in
 response to Jane Street's [protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/).
 
 The long-term goal is a small programmable processor that can read pins, write
