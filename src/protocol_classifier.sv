@@ -85,10 +85,10 @@ always @(posedge clk) begin
             last_pin_1 <= gpio_in[1];
 
             if (window_count == 5'd31) begin
-                features[0] <= edge_count_0 + transition_0;
-                features[1] <= high_count_0 + gpio_in[0];
-                features[2] <= edge_count_1 + transition_1;
-                features[3] <= high_count_1 + gpio_in[1];
+                features[0] <= edge_count_0 + {7'd0, transition_0};
+                features[1] <= high_count_0 + {7'd0, gpio_in[0]};
+                features[2] <= edge_count_1 + {7'd0, transition_1};
+                features[3] <= high_count_1 + {7'd0, gpio_in[1]};
                 window_count <= 5'd0;
                 edge_count_0 <= 8'd0;
                 high_count_0 <= 8'd0;
@@ -99,10 +99,10 @@ always @(posedge clk) begin
                 accumulator <= {{8{bias[15]}}, bias};
             end else begin
                 window_count <= window_count + 5'd1;
-                edge_count_0 <= edge_count_0 + transition_0;
-                high_count_0 <= high_count_0 + gpio_in[0];
-                edge_count_1 <= edge_count_1 + transition_1;
-                high_count_1 <= high_count_1 + gpio_in[1];
+                edge_count_0 <= edge_count_0 + {7'd0, transition_0};
+                high_count_0 <= high_count_0 + {7'd0, gpio_in[0]};
+                edge_count_1 <= edge_count_1 + {7'd0, transition_1};
+                high_count_1 <= high_count_1 + {7'd0, gpio_in[1]};
             end
 
             if (scoring) begin

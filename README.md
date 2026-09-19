@@ -19,7 +19,10 @@ activity. This is a tiny inference primitive, not a general AI accelerator.
 
 ## Current status
 
-The complete synthesizable ASIC top level is implemented and locally verified:
+**RTL milestone: implementation complete and simulation verified. Physical
+tapeout sign-off remains pending.**
+
+The current synthesizable top level includes:
 
 - 32-word, 16-bit serially loadable instruction memory
 - four 8-bit registers
@@ -29,7 +32,8 @@ The complete synthesizable ASIC top level is implemented and locally verified:
 - Tiny Tapeout IHP CMOS5L wrapper and 6x4 competition configuration
 - assembler plus UART, SPI, and I2C example firmware
 - programmable four-feature protocol signature classifier
-- self-checking RTL tests, lint, generic synthesis, and physical-design CI
+- self-checking RTL tests, lint, and generic synthesis
+- a configured IHP CMOS5L physical-design workflow for later tapeout sign-off
 
 Local Yosys synthesis reports approximately 3,088 generic cells for the full
 processor, loader, and classifier before IHP standard-cell mapping. This is an
@@ -106,6 +110,16 @@ python3 tools/assemble.py firmware/uart_tx_a5.asm uart_tx_a5.hex
 The resulting file contains 32 hexadecimal instruction words. Shift each word
 MSB-first into the ASIC wrapper and pulse commit after every sixteen bits.
 
+The normal operating sequence is:
+
+1. Assert reset to initialize the processor and loader address.
+2. Deassert reset while keeping `ui_in[3]` low.
+3. Serially load the program and optional classifier configuration.
+4. Set `ui_in[3]` high to execute from instruction address zero.
+
+Do not reset after loading classifier weights because reset intentionally
+returns the classifier configuration to its safe zero state.
+
 ## Tiny Tapeout pins
 
 | Pin | Function |
@@ -145,8 +159,9 @@ PASS: Tiny Tapeout serial loading and execution verified
 ```
 
 GitHub Actions runs the RTL regression on every push. The separate GDS workflow
-invokes the official Tiny Tapeout IHP CMOS5L build, precheck, and gate-level
-simulation actions.
+is configured to invoke the official Tiny Tapeout IHP CMOS5L build, precheck,
+and gate-level simulation actions; passing that workflow is part of the later
+physical tapeout milestone, not a completed claim in this README.
 
 ## Earlier Cyclone V results
 

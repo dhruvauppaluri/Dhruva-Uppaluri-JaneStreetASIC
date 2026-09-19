@@ -16,10 +16,12 @@ I2C START/STOP sequence.
 
 ## How to test
 
-Hold `ui_in[3]` low. Shift each 16-bit instruction MSB-first on `ui_in[0]`,
-pulsing `ui_in[1]` for each bit, then pulse `ui_in[2]` to commit the word.
-Addresses advance automatically. After loading the program, assert reset once
-to return the program counter to zero and set `ui_in[3]` high to run.
+Assert and release reset first, then hold `ui_in[3]` low. Shift each 16-bit
+instruction MSB-first on `ui_in[0]`, pulsing `ui_in[1]` for each bit, then
+pulse `ui_in[2]` to commit the word. Addresses advance automatically. After
+loading the program and optional classifier configuration, set `ui_in[3]` high
+to run. Do not reset after loading classifier weights because reset clears
+that configuration to its safe zero state.
 
 The eight `uio` pins are the emulated protocol pins. `uo_out[4:0]` shows the
 program counter; `uo_out[5]` indicates halt, `uo_out[6]` indicates an active
