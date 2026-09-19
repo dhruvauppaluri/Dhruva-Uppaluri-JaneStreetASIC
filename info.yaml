@@ -1,0 +1,45 @@
+# Tiny Tapeout project information
+project:
+  title:        "Programmable Protocol Emulator"
+  author:       "Dhruva Uppaluri"
+  discord:      ""
+  description:  "Cycle-accurate, firmware-programmable protocol emulator ASIC"
+  language:     "SystemVerilog"
+  clock_hz:     50000000
+  tiles:        "6x4"
+  top_module:   "tt_um_dhruvauppaluri_protocol_emulator"
+  source_files:
+    - "protocol_processor.sv"
+    - "serial_program_loader.sv"
+    - "protocol_classifier.sv"
+    - "tt_um_dhruvauppaluri_protocol_emulator.sv"
+
+pinout:
+  ui[0]: "program serial data"
+  ui[1]: "program shift strobe"
+  ui[2]: "program commit strobe"
+  ui[3]: "run / load select"
+  ui[4]: "loader target: program / classifier"
+  ui[5]: "restart loader address"
+  ui[6]: "route classifier result to CPU input 7"
+  ui[7]: "reserved"
+
+  uo[0]: "program counter bit 0"
+  uo[1]: "program counter bit 1"
+  uo[2]: "program counter bit 2"
+  uo[3]: "program counter bit 3"
+  uo[4]: "program counter bit 4"
+  uo[5]: "halted"
+  uo[6]: "waiting"
+  uo[7]: "protocol classifier result"
+
+  uio[0]: "protocol pin 0"
+  uio[1]: "protocol pin 1"
+  uio[2]: "protocol pin 2"
+  uio[3]: "protocol pin 3"
+  uio[4]: "protocol pin 4"
+  uio[5]: "protocol pin 5"
+  uio[6]: "protocol pin 6"
+  uio[7]: "protocol pin 7"
+
+yaml_version: 6

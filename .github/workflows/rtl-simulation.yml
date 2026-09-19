@@ -12,8 +12,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Icarus Verilog
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Install open-source RTL tools
+        run: sudo apt-get update && sudo apt-get install -y iverilog verilator yosys
 
       - name: Verify programmable pin generator
         run: |
@@ -26,3 +26,53 @@ jobs:
           iverilog -g2012 -s uart_tx_tb -o uart_tx_tb.out uart_tx.sv uart_tx_tb.sv
           vvp uart_tx_tb.out | tee uart_tx.log
           grep -q "PASS: UART transmitted 0x55 and 0xA3 correctly" uart_tx.log
+
+      - name: Verify early fetch-path milestones
+        run: |
+          iverilog -g2012 -s protocol_program_rom_tb -o protocol_program_rom_tb.out protocol_program_rom.sv protocol_program_rom_tb.sv
+          vvp protocol_program_rom_tb.out | tee protocol_program_rom.log
+          grep -q "PASS" protocol_program_rom.log
+          iverilog -g2012 -s program_counter_tb -o program_counter_tb.out program_counter.sv program_counter_tb.sv
+          vvp program_counter_tb.out | tee program_counter.log
+          grep -q "PASS" program_counter.log
+          iverilog -g2012 -s integration_fetch_tb -o integration_fetch_tb.out program_counter.sv protocol_program_rom.sv integration_fetch.sv integration_fetch_tb.sv
+          vvp integration_fetch_tb.out | tee integration_fetch.log
+          grep -q "PASS" integration_fetch.log
+
+      - name: Assemble protocol firmware
+        run: |
+          python3 tools/assemble.py firmware/uart_tx_a5.asm /tmp/uart_tx_a5.hex
+          python3 tools/assemble.py firmware/spi_mode0_nibble.asm /tmp/spi_mode0_nibble.hex
+          python3 tools/assemble.py firmware/i2c_start_stop.asm /tmp/i2c_start_stop.hex
+          cmp firmware/uart_tx_a5.hex /tmp/uart_tx_a5.hex
+          cmp firmware/spi_mode0_nibble.hex /tmp/spi_mode0_nibble.hex
+          cmp firmware/i2c_start_stop.hex /tmp/i2c_start_stop.hex
+
+      - name: Verify complete protocol processor
+        run: |
+          iverilog -g2012 -Wall -s protocol_processor_tb -o protocol_processor_tb.out src/protocol_processor.sv protocol_processor_tb.sv
+          vvp protocol_processor_tb.out | tee protocol_processor.log
+          grep -q "PASS: complete protocol processor ISA and timing verified" protocol_processor.log
+
+      - name: Verify UART firmware
+        run: |
+          iverilog -g2012 -Wall -s uart_firmware_tb -o uart_firmware_tb.out src/protocol_processor.sv uart_firmware_tb.sv
+          vvp uart_firmware_tb.out | tee uart_firmware.log
+          grep -q "PASS: UART 0xA5 firmware timing verified at 1 Mbit/s" uart_firmware.log
+
+      - name: Verify protocol signature classifier
+        run: |
+          iverilog -g2012 -Wall -s protocol_classifier_tb -o protocol_classifier_tb.out src/protocol_classifier.sv protocol_classifier_tb.sv
+          vvp protocol_classifier_tb.out | tee protocol_classifier.log
+          grep -q "PASS: programmable protocol signature classifier verified" protocol_classifier.log
+
+      - name: Verify Tiny Tapeout wrapper
+        run: |
+          iverilog -g2012 -Wall -s tiny_tapeout_wrapper_tb -o tiny_tapeout_wrapper_tb.out src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv tiny_tapeout_wrapper_tb.sv
+          vvp tiny_tapeout_wrapper_tb.out | tee tiny_tapeout_wrapper.log
+          grep -q "PASS: Tiny Tapeout serial loading and execution verified" tiny_tapeout_wrapper.log
+
+      - name: Lint and synthesize ASIC top level
+        run: |
+          verilator --lint-only --timing -Wall -Wno-DECLFILENAME --top-module tt_um_dhruvauppaluri_protocol_emulator src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv
+          yosys -p "read_verilog -sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv; synth -top tt_um_dhruvauppaluri_protocol_emulator; check"

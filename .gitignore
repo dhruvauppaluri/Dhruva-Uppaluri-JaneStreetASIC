@@ -19,3 +19,5 @@ c5_pin_model_dump.txt
 project.sigasi
 *.bak
 *~
+# Local open-source simulation and synthesis outputs
+build/

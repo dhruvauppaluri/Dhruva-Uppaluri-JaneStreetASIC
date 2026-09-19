@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module pin_generator (
     input wire       clk,
     input wire       reset,
