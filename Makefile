@@ -32,6 +32,10 @@ test: firmware
 	vvp $(BUILD_DIR)/protocol_processor_tb.out
 	iverilog -g2012 -Wall -s uart_firmware_tb -o $(BUILD_DIR)/uart_firmware_tb.out $(CORE_SOURCES) uart_firmware_tb.sv
 	vvp $(BUILD_DIR)/uart_firmware_tb.out
+	iverilog -g2012 -Wall -s spi_firmware_tb -o $(BUILD_DIR)/spi_firmware_tb.out $(CORE_SOURCES) spi_firmware_tb.sv
+	vvp $(BUILD_DIR)/spi_firmware_tb.out
+	iverilog -g2012 -Wall -s i2c_firmware_tb -o $(BUILD_DIR)/i2c_firmware_tb.out $(CORE_SOURCES) i2c_firmware_tb.sv
+	vvp $(BUILD_DIR)/i2c_firmware_tb.out
 	iverilog -g2012 -Wall -s protocol_classifier_tb -o $(BUILD_DIR)/protocol_classifier_tb.out src/protocol_classifier.sv protocol_classifier_tb.sv
 	vvp $(BUILD_DIR)/protocol_classifier_tb.out
 	iverilog -g2012 -Wall -s tiny_tapeout_wrapper_tb -o $(BUILD_DIR)/tiny_tapeout_wrapper_tb.out $(ASIC_SOURCES) tiny_tapeout_wrapper_tb.sv

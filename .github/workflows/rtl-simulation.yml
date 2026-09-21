@@ -60,6 +60,18 @@ jobs:
           vvp uart_firmware_tb.out | tee uart_firmware.log
           grep -q "PASS: UART 0xA5 firmware timing verified at 1 Mbit/s" uart_firmware.log
 
+      - name: Verify SPI firmware
+        run: |
+          iverilog -g2012 -Wall -s spi_firmware_tb -o spi_firmware_tb.out src/protocol_processor.sv spi_firmware_tb.sv
+          vvp spi_firmware_tb.out | tee spi_firmware.log
+          grep -q "PASS: SPI mode-0 firmware transmitted 0xA with exact timing" spi_firmware.log
+
+      - name: Verify I2C firmware
+        run: |
+          iverilog -g2012 -Wall -s i2c_firmware_tb -o i2c_firmware_tb.out src/protocol_processor.sv i2c_firmware_tb.sv
+          vvp i2c_firmware_tb.out | tee i2c_firmware.log
+          grep -q "PASS: open-drain I2C START/STOP firmware timing verified" i2c_firmware.log
+
       - name: Verify protocol signature classifier
         run: |
           iverilog -g2012 -Wall -s protocol_classifier_tb -o protocol_classifier_tb.out src/protocol_classifier.sv protocol_classifier_tb.sv

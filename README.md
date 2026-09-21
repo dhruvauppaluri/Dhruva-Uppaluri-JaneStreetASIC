@@ -31,6 +31,7 @@ The current synthesizable top level includes:
   operations, branches, and pin-level waiting
 - Tiny Tapeout IHP CMOS5L wrapper and 6x4 competition configuration
 - assembler plus UART, SPI, and I2C example firmware
+- self-checking waveform and cycle-timing tests for all three example protocols
 - programmable four-feature protocol signature classifier
 - self-checking RTL tests, lint, and generic synthesis
 - a configured IHP CMOS5L physical-design workflow for later tapeout sign-off
@@ -154,6 +155,8 @@ The primary expected pass messages are:
 ```text
 PASS: complete protocol processor ISA and timing verified
 PASS: UART 0xA5 firmware timing verified at 1 Mbit/s
+PASS: SPI mode-0 firmware transmitted 0xA with exact timing
+PASS: open-drain I2C START/STOP firmware timing verified
 PASS: programmable protocol signature classifier verified
 PASS: Tiny Tapeout serial loading and execution verified
 ```
@@ -162,6 +165,17 @@ GitHub Actions runs the RTL regression on every push. The separate GDS workflow
 is configured to invoke the official Tiny Tapeout IHP CMOS5L build, precheck,
 and gate-level simulation actions; passing that workflow is part of the later
 physical tapeout milestone, not a completed claim in this README.
+
+On Windows with Quartus Prime Lite 25.1 and Questa installed in its default
+location, run the same self-checking RTL and firmware simulations with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_questa.ps1
+```
+
+Pass `-QuestaBin <path>` if the Questa executables are installed elsewhere.
+The script explicitly optimizes each testbench before simulation, avoiding
+spurious optimized-library cleanup warnings in OneDrive-backed folders.
 
 ## Earlier Cyclone V results
 
@@ -183,6 +197,11 @@ generated physical design must pass the official IHP CMOS5L flow, including
 placement, routing, timing, design-rule checks, layout-versus-schematic checks,
 and gate-level simulation. This repository contains the configuration and CI
 workflow for those sign-off steps so the physical results remain reproducible.
+
+To learn that work hands-on rather than treating the flow as a black box, use
+the staged [physical-design and tapeout lab](docs/physical-design-lab.md). It
+defines what to run, inspect, measure, and understand at each stage without
+claiming that physical sign-off has already been completed.
 
 ## License
 
