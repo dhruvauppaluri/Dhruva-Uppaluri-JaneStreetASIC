@@ -28,6 +28,8 @@ $sources = @(
     "program_counter_tb.sv",
     "integration_fetch.sv",
     "integration_fetch_tb.sv",
+    "src/instruction_sram.sv",
+    "src/assist_engine.sv",
     "src/protocol_processor.sv",
     "protocol_processor_tb.sv",
     "uart_firmware_tb.sv",
@@ -37,7 +39,10 @@ $sources = @(
     "protocol_classifier_tb.sv",
     "src/serial_program_loader.sv",
     "src/tt_um_dhruvauppaluri_protocol_emulator.sv",
-    "tiny_tapeout_wrapper_tb.sv"
+    "tiny_tapeout_wrapper_tb.sv",
+    "assist_engine_tb.sv",
+    "usb_ls_firmware_tb.sv",
+    "spi_eth_firmware_tb.sv"
 )
 
 $tests = [ordered]@{
@@ -52,6 +57,9 @@ $tests = [ordered]@{
     "i2c_firmware_tb" = "PASS: open-drain I2C START/STOP firmware timing verified"
     "protocol_classifier_tb" = "PASS: programmable protocol signature classifier verified"
     "tiny_tapeout_wrapper_tb" = "PASS: Tiny Tapeout serial loading and execution verified"
+    "assist_engine_tb" = "PASS: assist NRZI, bit stuffing, and USB CRC-16 verified"
+    "usb_ls_firmware_tb" = "PASS: USB LS SYNC/PID and DATA0 CRC firmware verified"
+    "spi_eth_firmware_tb" = "PASS: ENC28J60 SPI min-frame firmware verified"
 }
 
 $runToken = "$PID"

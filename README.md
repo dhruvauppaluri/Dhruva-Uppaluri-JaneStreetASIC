@@ -24,28 +24,52 @@ tapeout sign-off remains pending.**
 
 The current synthesizable top level includes:
 
-- 32-word, 16-bit serially loadable instruction memory
+- 256-word, 16-bit serially loadable instruction SRAM (inferrable array;
+  Tiny Tapeout IHP SRAM macros can replace the wrapper later)
 - four 8-bit registers
 - eight bidirectional protocol pins
 - 16-instruction ISA with deterministic waits, pin sampling, integer/bit
   operations, branches, and pin-level waiting
+- general assist engine (programmable bit tick, NRZI pair, stuffing,
+  USB CRC-16, 32-byte FIFO) reached through reserved `OUT`/`IN` encodings
 - Tiny Tapeout IHP CMOS5L wrapper and 6x4 competition configuration
-- assembler plus UART, SPI, and I2C example firmware
-- self-checking waveform and cycle-timing tests for all three example protocols
+- assembler plus UART, SPI, I2C, USB LS, and ENC28J60 SPI example firmware
+- self-checking waveform and cycle-timing tests for the example protocols
 - programmable four-feature protocol signature classifier
 - self-checking RTL tests, lint, and generic synthesis
 - a configured IHP CMOS5L physical-design workflow for later tapeout sign-off
 
-Local Yosys synthesis reports approximately 3,088 generic cells for the full
-processor, loader, and classifier before IHP standard-cell mapping. This is an
-early complexity measurement, not a substitute for the LibreLane post-route
-area and timing reports produced by the GDS workflow.
+Local Yosys synthesis reports approximately **11,610** generic cells for the
+full processor, 256×16 inferrable IMEM, loader, classifier, and assist before
+IHP standard-cell mapping. Most of that is flip-flop mapping of instruction
+memory (`$_DFFE_PP_` count). This is an early complexity measurement, not a
+substitute for the LibreLane post-route area and timing reports produced by
+the GDS workflow. A compiled Tiny Tapeout SRAM macro in
+`src/instruction_sram.sv` is the intended area reduction if 6×4 routing is
+tight. See [docs/physical-design-lab.md](docs/physical-design-lab.md).
+
+## Stretch goals (Tier 2)
+
+Process: IHP **130 nm CMOS5L** through Tiny Tapeout. Tile size: **6×4**.
+
+Jane Street names UART/SPI/I2C as the baseline and **low-speed USB** plus
+**10 Mbit Ethernet** as stretch goals. This design keeps a general-purpose
+firmware CPU (RP2040 PIO / PRU style) instead of taping out fixed UART, SPI,
+I2C, USB, or Ethernet IP.
+
+| Stretch | What is implemented | What is not claimed |
+| --- | --- | --- |
+| USB low-speed | 1.5 Mbit/s-class NRZI on `uio[0:1]` (D+/D−) with a 33-cycle tick at 50 MHz, bit stuffing, USB CRC-16, SYNC+PID and DATA0 firmware, self-checking TBs | Full device/host stack, enumeration, analog USB PHY |
+| 10 Mbit Ethernet | Programmable SPI master to an ENC28J60-class MAC/PHY on `uio[2:7]`; canned WBM + broadcast dest MAC | On-die RMII/MII, 10BASE-T magnetics, or “10 Mbps on GPIO” |
+
+Board hookup (1.5 kΩ LS pull-up on D−, ENC28J60 wiring, load/run) is in
+[docs/dut-integration.md](docs/dut-integration.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Host[Serial program/config loader] --> IMEM[32 x 16 instruction memory]
+    Host[Serial program/config loader] --> IMEM[256 x 16 instruction SRAM]
 
     subgraph CPU[Protocol processor]
         PC[Program counter] --> Decode[Instruction decoder]
@@ -53,11 +77,13 @@ flowchart LR
         Decode --> Timer[12-bit wait counter]
         Decode --> Regs[4 x 8-bit registers]
         Decode --> GPIO[GPIO output and direction]
+        Decode --> Assist[Bit tick / NRZI / stuff / CRC / FIFO]
         Inputs[Pin sampler] --> Regs
     end
 
     Pins[8 bidirectional pins] --> Inputs
     GPIO --> Pins
+    Assist --> Pins
 
     Pins --> Features[32-cycle feature window]
     Features --> Classifier[Programmable linear classifier]
@@ -90,6 +116,7 @@ Instructions contain a 4-bit opcode and 12-bit operand.
 | `C/D` | `JZ` / `JNZ` | Conditional branch |
 | `E` | `WAIT_PIN pin, level` | Wait for a pin level |
 | `F` | `HALT` | Stop until reset |
+| `OUT`/`IN` reserved | `AOUT` / `AIN` | Assist MMIO (tick, NRZI, stuff, CRC, FIFO) |
 
 See [docs/instruction-set.md](docs/instruction-set.md) for encodings and
 programming details.
@@ -101,6 +128,9 @@ programming details.
 | `firmware/uart_tx_a5.asm` | Sends `0xA5` as 1 Mbit/s 8N1 UART at 50 MHz |
 | `firmware/spi_mode0_nibble.asm` | Sends `0xA` MSB-first in SPI mode 0 |
 | `firmware/i2c_start_stop.asm` | Generates open-drain I2C START and STOP |
+| `firmware/usb_ls_sync_pid.asm` | USB LS SYNC + DATA0 PID on D+/D− |
+| `firmware/usb_ls_data0_crc.asm` | USB LS DATA0 byte with hardware CRC-16 |
+| `firmware/enc28j60_min_frame.asm` | SPI WBM of a canned ENC28J60 dest MAC |
 
 Assemble a program with:
 
@@ -108,7 +138,7 @@ Assemble a program with:
 python3 tools/assemble.py firmware/uart_tx_a5.asm uart_tx_a5.hex
 ```
 
-The resulting file contains 32 hexadecimal instruction words. Shift each word
+The resulting file contains 256 hexadecimal instruction words. Shift each word
 MSB-first into the ASIC wrapper and pulse commit after every sixteen bits.
 
 The normal operating sequence is:
@@ -132,8 +162,16 @@ returns the classifier configuration to its safe zero state.
 | `ui_in[4]` | Loader target: program memory or classifier configuration |
 | `ui_in[5]` | Restart loader address at zero |
 | `ui_in[6]` | Route classifier result to processor input bit 7 |
-| `uio[7:0]` | Bidirectional protocol pins |
-| `uo_out[4:0]` | Program counter |
+| `ui_in[7]` | Load: assist MMIO target. Run: show `PC[7:5]` on `uo_out[2:0]` |
+| `uio[0]` | USB D+ / protocol pin 0 |
+| `uio[1]` | USB D− / protocol pin 1 |
+| `uio[2]` | Eth SPI SCK / protocol pin 2 |
+| `uio[3]` | Eth SPI MOSI / protocol pin 3 |
+| `uio[4]` | Eth SPI MISO / protocol pin 4 |
+| `uio[5]` | Eth SPI CS / protocol pin 5 |
+| `uio[6]` | Eth RST / protocol pin 6 |
+| `uio[7]` | Eth INT / protocol pin 7 |
+| `uo_out[4:0]` | Program counter `[4:0]` (high bits truncated unless `ui_in[7]`) |
 | `uo_out[5]` | Halted status |
 | `uo_out[6]` | Timed-wait status |
 | `uo_out[7]` | Classifier result |
@@ -146,9 +184,9 @@ Run the complete local regression:
 make all
 ```
 
-This runs every earlier milestone test, complete ISA verification, UART
-firmware timing, classifier verification, serial-loader/wrapper verification,
-Verilator lint, and Yosys synthesis.
+This runs every earlier milestone test, complete ISA verification, UART/SPI/I2C
+firmware timing, USB LS and ENC28J60 SPI firmware, classifier verification,
+serial-loader/wrapper verification, Verilator lint, and Yosys synthesis.
 
 The primary expected pass messages are:
 
@@ -159,6 +197,9 @@ PASS: SPI mode-0 firmware transmitted 0xA with exact timing
 PASS: open-drain I2C START/STOP firmware timing verified
 PASS: programmable protocol signature classifier verified
 PASS: Tiny Tapeout serial loading and execution verified
+PASS: assist NRZI, bit stuffing, and USB CRC-16 verified
+PASS: USB LS SYNC/PID and DATA0 CRC firmware verified
+PASS: ENC28J60 SPI min-frame firmware verified
 ```
 
 GitHub Actions runs the RTL regression on every push. The separate GDS workflow

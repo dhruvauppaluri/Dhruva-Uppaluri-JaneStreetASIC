@@ -6,15 +6,15 @@ reg clk;
 reg reset;
 reg enable;
 reg program_we;
-reg [4:0] program_address;
+reg [7:0] program_address;
 reg [15:0] program_data;
 wire [7:0] gpio_out;
 wire [7:0] gpio_oe;
 wire halted;
 wire waiting;
-wire [4:0] pc;
+wire [7:0] pc;
 
-reg [15:0] firmware_words [0:31];
+reg [15:0] firmware_words [0:255];
 reg [9:0] expected_frame;
 integer address;
 integer bit_number;
@@ -27,6 +27,9 @@ protocol_processor dut (
     .program_we(program_we),
     .program_address(program_address),
     .program_data(program_data),
+    .assist_cfg_we(1'b0),
+    .assist_cfg_address(2'd0),
+    .assist_cfg_data(8'h00),
     .gpio_in(8'h00),
     .gpio_out(gpio_out),
     .gpio_oe(gpio_oe),
@@ -49,16 +52,16 @@ initial begin
     reset = 1'b1;
     enable = 1'b0;
     program_we = 1'b0;
-    program_address = 5'd0;
+    program_address = 8'd0;
     program_data = 16'h0000;
     expected_frame = {1'b1, 8'hA5, 1'b0};
     errors = 0;
 
     $readmemh("firmware/uart_tx_a5.hex", firmware_words);
 
-    for (address = 0; address < 32; address = address + 1) begin
+    for (address = 0; address < 256; address = address + 1) begin
         @(negedge clk);
-        program_address = address[4:0];
+        program_address = address[7:0];
         program_data = firmware_words[address];
         program_we = 1'b1;
         @(posedge clk);
@@ -109,7 +112,7 @@ initial begin
 end
 
 initial begin
-    #30000;
+    #100000;
     $display("FAIL: UART firmware testbench timeout");
     $finish;
 end

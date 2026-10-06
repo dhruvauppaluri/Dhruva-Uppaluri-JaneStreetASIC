@@ -1,0 +1,255 @@
+; Minimal ENC28J60-class SPI frame write on uio[2:5].
+; The ASIC is a programmable SPI master. 10 Mbit/s on the wire is
+; produced by the external MAC/PHY (ENC28J60-class), not by RMII
+; or bit-banged 10BASE-T on these pins.
+; uio[2]=SCK, uio[3]=MOSI, uio[4]=MISO, uio[5]=CS,
+; uio[6]=RST (held high), uio[7]=INT (input).
+; Opcode 0x7A = WBM, then six 0xFF destination MAC bytes.
+; SPI mode 0, MSB first, 10-cycle half-period at 50 MHz.
+
+DIR  0x6C            ; SCK MOSI CS RST outputs
+OUT  0x60            ; CS high, RST high, SCK/MOSI low
+WAIT 8
+OUT  0x40            ; CS low
+WAIT 8
+
+; byte 0x7A
+OUT  0x40
+WAIT 8
+OUT  0x44
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x40
+WAIT 8
+OUT  0x44
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x40
+WAIT 8
+OUT  0x44
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+; byte 0xFF
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+OUT  0x48
+WAIT 8
+OUT  0x4C
+WAIT 8
+
+OUT  0x60            ; CS high
+HALT

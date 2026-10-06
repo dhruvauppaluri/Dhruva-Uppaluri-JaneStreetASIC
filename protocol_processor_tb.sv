@@ -23,7 +23,7 @@ reg clk;
 reg reset;
 reg enable;
 reg program_we;
-reg [4:0] program_address;
+reg [7:0] program_address;
 reg [15:0] program_data;
 reg [7:0] gpio_in;
 
@@ -31,7 +31,7 @@ wire [7:0] gpio_out;
 wire [7:0] gpio_oe;
 wire halted;
 wire waiting;
-wire [4:0] pc;
+wire [7:0] pc;
 
 integer errors;
 
@@ -42,6 +42,9 @@ protocol_processor dut (
     .program_we(program_we),
     .program_address(program_address),
     .program_data(program_data),
+    .assist_cfg_we(1'b0),
+    .assist_cfg_address(2'd0),
+    .assist_cfg_data(8'h00),
     .gpio_in(gpio_in),
     .gpio_out(gpio_out),
     .gpio_oe(gpio_oe),
@@ -70,14 +73,14 @@ endfunction
 
 function [11:0] branch;
     input [1:0] register_number;
-    input [4:0] address;
+    input [7:0] address;
     begin
-        branch = {2'b00, register_number, 3'b000, address};
+        branch = {2'b00, register_number, address};
     end
 endfunction
 
 task write_instruction;
-    input [4:0] address;
+    input [7:0] address;
     input [15:0] value;
     begin
         @(negedge clk);
@@ -91,7 +94,7 @@ task write_instruction;
 endtask
 
 task check_state;
-    input [4:0] expected_pc;
+    input [7:0] expected_pc;
     input [7:0] expected_output;
     input expected_waiting;
     begin
@@ -119,35 +122,35 @@ initial begin
     reset = 1'b1;
     enable = 1'b0;
     program_we = 1'b0;
-    program_address = 5'd0;
+    program_address = 8'd0;
     program_data = 16'h0000;
     gpio_in = 8'h00;
     errors = 0;
 
     // Exercise output, direction, wait/pause, register ALU, loop branches,
     // input sampling, pin waiting, shifts, XOR, zero wait, jump and halt.
-    write_instruction(5'd0,  insn(OP_DIR,      12'h0FF));
-    write_instruction(5'd1,  insn(OP_OUT,      12'h001));
-    write_instruction(5'd2,  insn(OP_WAIT,     12'd3));
-    write_instruction(5'd3,  insn(OP_OUT,      12'h000));
-    write_instruction(5'd4,  insn(OP_LDI,      reg_imm(2'd0, 8'd3)));
-    write_instruction(5'd5,  insn(OP_OUT,      12'h800)); // OUT r0
-    write_instruction(5'd6,  insn(OP_ADDI,     reg_imm(2'd0, 8'hFF)));
-    write_instruction(5'd7,  insn(OP_JNZ,      branch(2'd0, 5'd5)));
-    write_instruction(5'd8,  insn(OP_IN,       reg_imm(2'd1, 8'h00)));
-    write_instruction(5'd9,  insn(OP_ANDI,     reg_imm(2'd1, 8'h01)));
-    write_instruction(5'd10, insn(OP_JZ,       branch(2'd1, 5'd8)));
-    write_instruction(5'd11, insn(OP_OUT,      12'h0AA));
-    write_instruction(5'd12, insn(OP_WAIT_PIN, 12'h00A)); // pin 2 == 1
-    write_instruction(5'd13, insn(OP_LDI,      reg_imm(2'd2, 8'h81)));
-    write_instruction(5'd14, insn(OP_SHL,      reg_imm(2'd2, 8'h00)));
-    write_instruction(5'd15, insn(OP_SHR,      reg_imm(2'd2, 8'h00)));
-    write_instruction(5'd16, insn(OP_XORI,     reg_imm(2'd2, 8'h01)));
-    write_instruction(5'd17, insn(OP_OUT,      12'hA00)); // OUT r2
-    write_instruction(5'd18, insn(OP_WAIT,     12'd0));
-    write_instruction(5'd19, insn(OP_JMP,      12'd21));
-    write_instruction(5'd20, insn(OP_OUT,      12'h0EE)); // must skip
-    write_instruction(5'd21, insn(OP_HALT,     12'h000));
+    write_instruction(8'd0,  insn(OP_DIR,      12'h0FF));
+    write_instruction(8'd1,  insn(OP_OUT,      12'h001));
+    write_instruction(8'd2,  insn(OP_WAIT,     12'd3));
+    write_instruction(8'd3,  insn(OP_OUT,      12'h000));
+    write_instruction(8'd4,  insn(OP_LDI,      reg_imm(2'd0, 8'd3)));
+    write_instruction(8'd5,  insn(OP_OUT,      12'h800)); // OUT r0
+    write_instruction(8'd6,  insn(OP_ADDI,     reg_imm(2'd0, 8'hFF)));
+    write_instruction(8'd7,  insn(OP_JNZ,      branch(2'd0, 8'd5)));
+    write_instruction(8'd8,  insn(OP_IN,       reg_imm(2'd1, 8'h00)));
+    write_instruction(8'd9,  insn(OP_ANDI,     reg_imm(2'd1, 8'h01)));
+    write_instruction(8'd10, insn(OP_JZ,       branch(2'd1, 8'd8)));
+    write_instruction(8'd11, insn(OP_OUT,      12'h0AA));
+    write_instruction(8'd12, insn(OP_WAIT_PIN, 12'h00A)); // pin 2 == 1
+    write_instruction(8'd13, insn(OP_LDI,      reg_imm(2'd2, 8'h81)));
+    write_instruction(8'd14, insn(OP_SHL,      reg_imm(2'd2, 8'h00)));
+    write_instruction(8'd15, insn(OP_SHR,      reg_imm(2'd2, 8'h00)));
+    write_instruction(8'd16, insn(OP_XORI,     reg_imm(2'd2, 8'h01)));
+    write_instruction(8'd17, insn(OP_OUT,      12'hA00)); // OUT r2
+    write_instruction(8'd18, insn(OP_WAIT,     12'd0));
+    write_instruction(8'd19, insn(OP_JMP,      12'd21));
+    write_instruction(8'd20, insn(OP_OUT,      12'h0EE)); // must skip
+    write_instruction(8'd21, insn(OP_HALT,     12'h000));
 
     @(negedge clk);
     reset = 1'b0;
@@ -160,26 +163,26 @@ initial begin
     end
 
     step(); // OUT 1
-    check_state(5'd2, 8'h01, 1'b0);
+    check_state(8'd2, 8'h01, 1'b0);
 
     step(); // WAIT 3 starts
-    check_state(5'd3, 8'h01, 1'b1);
+    check_state(8'd3, 8'h01, 1'b1);
 
     // Pausing the processor must also pause the wait counter.
     enable = 1'b0;
     repeat (2) begin
         step();
-        check_state(5'd3, 8'h01, 1'b1);
+        check_state(8'd3, 8'h01, 1'b1);
     end
     enable = 1'b1;
 
     repeat (3) begin
         step();
     end
-    check_state(5'd3, 8'h01, 1'b0);
+    check_state(8'd3, 8'h01, 1'b0);
 
     step(); // OUT 0
-    check_state(5'd4, 8'h00, 1'b0);
+    check_state(8'd4, 8'h00, 1'b0);
 
     step(); // LDI r0, 3
     step(); // OUT r0
@@ -194,29 +197,29 @@ initial begin
     if (gpio_out !== 8'd1) errors = errors + 1;
     step(); // ADDI -> 0
     step(); // JNZ falls through
-    if (pc !== 5'd8) errors = errors + 1;
+    if (pc !== 8'd8) errors = errors + 1;
 
     // First input sample is zero, so the polling loop repeats.
     step(); // IN
     step(); // ANDI
     step(); // JZ -> 8
-    if (pc !== 5'd8) errors = errors + 1;
+    if (pc !== 8'd8) errors = errors + 1;
 
     gpio_in = 8'h01;
     step(); // IN
     step(); // ANDI
     step(); // JZ falls through
     step(); // OUT AA
-    if (gpio_out !== 8'hAA || pc !== 5'd12) errors = errors + 1;
+    if (gpio_out !== 8'hAA || pc !== 8'd12) errors = errors + 1;
 
     // WAIT_PIN targets pin 2 high and must hold the PC while it is low.
     repeat (3) begin
         step();
-        if (pc !== 5'd12) errors = errors + 1;
+        if (pc !== 8'd12) errors = errors + 1;
     end
     gpio_in = 8'h05;
     step();
-    if (pc !== 5'd13) errors = errors + 1;
+    if (pc !== 8'd13) errors = errors + 1;
 
     step(); // LDI r2, 81
     step(); // SHL -> 02
@@ -225,19 +228,19 @@ initial begin
     step(); // OUT r2
     if (gpio_out !== 8'h00) errors = errors + 1;
     step(); // WAIT 0
-    if (waiting !== 1'b0 || pc !== 5'd19) errors = errors + 1;
+    if (waiting !== 1'b0 || pc !== 8'd19) errors = errors + 1;
     step(); // JMP 21
-    if (pc !== 5'd21) errors = errors + 1;
+    if (pc !== 8'd21) errors = errors + 1;
     step(); // HALT
 
-    if (!halted || pc !== 5'd21 || gpio_out !== 8'h00) begin
+    if (!halted || pc !== 8'd21 || gpio_out !== 8'h00) begin
         $display("ERROR: HALT state incorrect");
         errors = errors + 1;
     end
 
     repeat (3) begin
         step();
-        if (!halted || pc !== 5'd21) errors = errors + 1;
+        if (!halted || pc !== 8'd21) errors = errors + 1;
     end
 
     if (errors == 0)

@@ -3,7 +3,16 @@
 The processor uses 16-bit instructions. Bits `[15:12]` hold the opcode and
 bits `[11:0]` hold its operand. It has four 8-bit registers (`R0` through
 `R3`), eight bidirectional protocol pins, a 12-bit wait counter, and a
-32-instruction program memory.
+256-instruction program memory (`PROGRAM_WORDS = 256`). The program counter
+is eight bits wide. Jump targets must land in `0 .. PROGRAM_WORDS-1`.
+`JZ`/`JNZ` encode the address in eight bits, so they also cover the full
+256-word space. `JMP` uses the low bits of the 12-bit operand, validated
+against the same depth by the assembler.
+
+Instruction memory is an inferrable SRAM-style array with clocked writes and
+combinational reads, so fetch remains single-cycle and `WAIT` timing is
+unchanged. Serial load semantics are unchanged: sixteen bits MSB-first, then
+a commit pulse, while `ui_in[3]` is low.
 
 | Opcode | Assembly | Operation |
 | --- | --- | --- |
@@ -28,6 +37,32 @@ bits `[11:0]` hold its operand. It has four 8-bit registers (`R0` through
 after the `WAIT` instruction. Therefore, two `OUT` instructions separated by
 `WAIT N` occur `N + 2` clocks apart.
 
+## Assist MMIO (reserved OUT / IN encodings)
+
+The same `OUT`/`IN` opcodes decode a reserved operand space that talks to a
+general-purpose assist engine (bit tick, NRZI pair driver, bit stuffing,
+USB CRC-16, 32-byte FIFO). These are **not** USB-named opcodes.
+
+| Assembly | Encoding | Meaning |
+| --- | --- | --- |
+| `AOUT port, imm` | `OUT` with operand `[11:10]=01`, port in `[9:8]` | Write immediate to assist port 0..3 |
+| `AOUT port, Rn` | `OUT` with operand `[11:10]=11`, register in `[9:8]`, port in `[7:6]` | Write register to assist port |
+| `AIN Rn, port` | `IN` with operand `[11:10]=01`, port in `[1:0]` | Read assist port into a register |
+
+Ports:
+
+| Port | Write | Read |
+| --- | --- | --- |
+| 0 | Control (start, reset, stuff/NRZI/SE0/overlay) | Status (busy, FIFO, SE0, tick, line) |
+| 1 | Bit-tick period in clocks (USB LS uses 33 at 50 MHz) | CRC-16 high byte (wire value) |
+| 2 | Push TX FIFO | FIFO occupancy |
+| 3 | Feed CRC-16 | CRC-16 low byte (wire value) |
+
+Status bit 3 is SE0: both selected assist pins are low on `gpio_in`. Firmware
+can poll that instead of a dedicated `WAIT_SE0` opcode. The assist keeps
+ticking while the CPU is in `WAIT` or `HALT` as long as run-mode `enable` is
+high.
+
 ## Programming interface
 
 The Tiny Tapeout wrapper loads one word at a time:
@@ -41,6 +76,13 @@ The Tiny Tapeout wrapper loads one word at a time:
 
 The loader address returns to zero on reset. Reset does not erase instruction
 memory, allowing a loaded program to be restarted.
+
+`ui_in[7]` while loading selects the assist MMIO as the write target (the
+same extra-target pattern as the classifier on `ui_in[4]`). While running,
+`ui_in[7]` muxes `PC[7:5]` onto `uo_out[2:0]` (`uo_out[4:3]` stay zero in
+that view). By default `uo_out[4:0]` still shows `PC[4:0]`, so programs
+shorter than 32 words look unchanged; high PC bits are truncated unless
+`ui_in[7]` is set.
 
 ## Classifier configuration
 

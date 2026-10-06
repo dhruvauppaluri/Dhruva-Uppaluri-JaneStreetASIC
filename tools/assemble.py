@@ -26,6 +26,9 @@ OPCODES = {
     "JNZ": 0xD,
     "WAIT_PIN": 0xE,
     "HALT": 0xF,
+    # Reserved OUT/IN encodings for the assist MMIO (not new opcodes).
+    "AOUT": 0x1,
+    "AIN": 0x4,
 }
 
 
@@ -70,7 +73,7 @@ def clean_lines(source: str) -> tuple[list[tuple[int, str]], dict[str, int]]:
     return instructions, labels
 
 
-def encode(line: str, labels: dict[str, int]) -> int:
+def encode(line: str, labels: dict[str, int], depth: int) -> int:
     fields = [field for field in re.split(r"[\s,]+", line.strip()) if field]
     mnemonic = fields[0].upper()
     args = fields[1:]
@@ -80,6 +83,7 @@ def encode(line: str, labels: dict[str, int]) -> int:
 
     opcode = OPCODES[mnemonic]
     operand = 0
+    last_address = depth - 1
 
     if mnemonic in {"NOP", "HALT"}:
         if args:
@@ -93,6 +97,26 @@ def encode(line: str, labels: dict[str, int]) -> int:
             operand = parse_number(args[0], labels)
             if not 0 <= operand <= 0xFF:
                 raise ValueError("OUT immediate must fit in 8 bits")
+    elif mnemonic == "AOUT":
+        if len(args) != 2:
+            raise ValueError("AOUT takes a port and an immediate or register")
+        port = parse_number(args[0], labels)
+        if not 0 <= port <= 3:
+            raise ValueError("AOUT port must be 0..3")
+        if args[1].upper().startswith("R"):
+            operand = 0xC00 | (parse_register(args[1]) << 8) | (port << 6)
+        else:
+            data = parse_number(args[1], labels)
+            if not 0 <= data <= 0xFF:
+                raise ValueError("AOUT immediate must fit in 8 bits")
+            operand = 0x400 | (port << 8) | data
+    elif mnemonic == "AIN":
+        if len(args) != 2:
+            raise ValueError("AIN takes a register and port")
+        port = parse_number(args[1], labels)
+        if not 0 <= port <= 3:
+            raise ValueError("AIN port must be 0..3")
+        operand = 0x400 | (parse_register(args[0]) << 8) | port
     elif mnemonic == "DIR":
         if len(args) != 1:
             raise ValueError("DIR takes one 8-bit mask")
@@ -124,14 +148,16 @@ def encode(line: str, labels: dict[str, int]) -> int:
         if len(args) != 1:
             raise ValueError("JMP takes one address")
         operand = parse_number(args[0], labels)
-        if not 0 <= operand <= 31:
-            raise ValueError("JMP address must be 0..31")
+        if not 0 <= operand <= last_address:
+            raise ValueError(f"JMP address must be 0..{last_address}")
     elif mnemonic in {"JZ", "JNZ"}:
         if len(args) != 2:
             raise ValueError(f"{mnemonic} takes a register and address")
         address = parse_number(args[1], labels)
-        if not 0 <= address <= 31:
-            raise ValueError(f"{mnemonic} address must be 0..31")
+        if not 0 <= address <= last_address:
+            raise ValueError(f"{mnemonic} address must be 0..{last_address}")
+        if address > 0xFF:
+            raise ValueError(f"{mnemonic} address must fit in 8 bits")
         operand = (parse_register(args[0]) << 8) | address
     elif mnemonic == "WAIT_PIN":
         if len(args) != 2:
@@ -145,7 +171,7 @@ def encode(line: str, labels: dict[str, int]) -> int:
     return (opcode << 12) | operand
 
 
-def assemble(source: str, depth: int = 32) -> list[int]:
+def assemble(source: str, depth: int = 256) -> list[int]:
     lines, labels = clean_lines(source)
     if len(lines) > depth:
         raise ValueError(f"program has {len(lines)} instructions; maximum is {depth}")
@@ -153,7 +179,7 @@ def assemble(source: str, depth: int = 32) -> list[int]:
     words: list[int] = []
     for line_number, line in lines:
         try:
-            words.append(encode(line, labels))
+            words.append(encode(line, labels, depth))
         except ValueError as error:
             raise ValueError(f"line {line_number}: {error}") from error
 
@@ -164,7 +190,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=pathlib.Path)
     parser.add_argument("output", type=pathlib.Path)
-    parser.add_argument("--depth", type=int, default=32)
+    parser.add_argument("--depth", type=int, default=256)
     args = parser.parse_args()
 
     try:

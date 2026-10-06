@@ -2,7 +2,7 @@ SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = protocol_processor.sv serial_program_loader.sv protocol_classifier.sv tt_um_dhruvauppaluri_protocol_emulator.sv
+PROJECT_SOURCES = instruction_sram.sv assist_engine.sv protocol_processor.sv serial_program_loader.sv protocol_classifier.sv tt_um_dhruvauppaluri_protocol_emulator.sv
 
 ifneq ($(GATES),yes)
 SIM_BUILD = sim_build/rtl
