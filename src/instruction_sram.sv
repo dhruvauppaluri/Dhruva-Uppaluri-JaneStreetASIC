@@ -11,10 +11,11 @@
 //
 // Clocked write + combinational read keeps the protocol ISA single-cycle
 // fetch, so WAIT timing and the existing UART/SPI/I2C firmware TBs stay
-// valid. Yosys maps the array to $mem / flip-flops. To swap in a real TT
-// SRAM later, replace this module with a wrapper of the same ports; a
-// synchronous-read macro would also need a fetch register and a one-cycle
-// stall policy, which this design deliberately avoids.
+// valid. Yosys still maps the array to $mem / flip-flops in this shuttle
+// RTL (no PDK macro is vendored). For GDS, wrap
+// RM_IHPSG13_1P_256x16_c2_bm_bist (or the CMOS5L equivalent) with the same
+// ports; a synchronous-read macro would also need a fetch register and a
+// stall policy, which this design deliberately avoids so WAIT N stays N+2.
 module instruction_sram #(
     parameter integer DEPTH      = 256,
     parameter integer DATA_WIDTH = 16,

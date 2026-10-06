@@ -8,9 +8,10 @@
 // without erasing the loaded protocol firmware.
 //
 // Instruction memory is an inferrable SRAM-style array (see instruction_sram).
-// A memory-mapped assist engine provides a programmable bit tick, NRZI pair
-// driver, bit stuffing, USB CRC-16, and a small FIFO. Firmware reaches it
-// through reserved OUT/IN encodings (AOUT/AIN), not USB-named opcodes.
+// A memory-mapped serial engine provides a programmable bit tick, 1- or 2-bit
+// shifter, NRZI+stuff or NRZ, CRC-16/CRC-32, 64-byte packet RAM, and TX/RX
+// pin overlay. Firmware reaches it through reserved OUT/IN encodings
+// (AOUT/AIN), not USB- or Ethernet-named opcodes.
 module protocol_processor #(
     parameter integer PROGRAM_WORDS = 256,
     parameter integer ADDRESS_WIDTH = $clog2(PROGRAM_WORDS)
@@ -63,6 +64,8 @@ reg [7:0] pin_oe;
 wire [7:0] assist_out;
 wire [7:0] assist_oe;
 wire [7:0] assist_rdata;
+wire [7:0] pin_out_w;
+wire [7:0] pin_oe_w;
 
 wire [3:0] opcode = instruction[15:12];
 wire [11:0] operand = instruction[11:0];
@@ -84,10 +87,11 @@ wire assist_we = cpu_assist_we || assist_cfg_we;
 wire [1:0] assist_addr = cpu_assist_we ? cpu_assist_addr : assist_cfg_address;
 wire [7:0] assist_data = cpu_assist_we ? cpu_assist_data : assist_cfg_data;
 wire [1:0] assist_rd_addr = in_assist ? operand[1:0] : 2'd0;
+wire assist_rd_inc = cpu_exec && in_assist && (operand[1:0] == 2'd2);
 
 assign waiting = wait_active;
-assign gpio_out = (pin_out & ~assist_oe) | (assist_out & assist_oe);
-assign gpio_oe  = pin_oe | assist_oe;
+assign pin_out_w = pin_out;
+assign pin_oe_w  = pin_oe;
 
 instruction_sram #(
     .DEPTH(PROGRAM_WORDS)
@@ -100,7 +104,7 @@ instruction_sram #(
     .rdata(instruction)
 );
 
-assist_engine assist (
+serial_engine engine (
     .clk(clk),
     .reset(reset),
     .enable(enable),
@@ -108,10 +112,20 @@ assist_engine assist (
     .wr_addr(assist_addr),
     .wr_data(assist_data),
     .rd_addr(assist_rd_addr),
+    .rd_inc(assist_rd_inc),
     .rd_data(assist_rdata),
     .gpio_in(gpio_in),
     .assist_out(assist_out),
     .assist_oe(assist_oe)
+);
+
+pin_overlay overlay (
+    .cpu_out(pin_out_w),
+    .cpu_oe(pin_oe_w),
+    .eng_out(assist_out),
+    .eng_oe(assist_oe),
+    .gpio_out(gpio_out),
+    .gpio_oe(gpio_oe)
 );
 
 always @(posedge clk) begin
@@ -142,7 +156,7 @@ always @(posedge clk) begin
 
                 OP_OUT: begin
                     if (out_assist_imm || out_assist_reg) begin
-                        // Reserved decoder: write the assist MMIO port.
+                        // Reserved decoder: write the serial-engine MMIO port.
                     end else if (operand[11])
                         pin_out <= registers[register_index];
                     else

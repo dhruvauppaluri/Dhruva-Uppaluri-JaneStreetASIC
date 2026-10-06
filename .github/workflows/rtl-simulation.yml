@@ -46,35 +46,41 @@ jobs:
           python3 tools/assemble.py firmware/i2c_start_stop.asm /tmp/i2c_start_stop.hex
           python3 tools/assemble.py firmware/usb_ls_sync_pid.asm /tmp/usb_ls_sync_pid.hex
           python3 tools/assemble.py firmware/usb_ls_data0_crc.asm /tmp/usb_ls_data0_crc.hex
+          python3 tools/assemble.py firmware/usb_ls_device_lite.asm /tmp/usb_ls_device_lite.hex
+          python3 tools/assemble.py firmware/eth_rmii_min_frame.asm /tmp/eth_rmii_min_frame.hex
+          python3 tools/assemble.py firmware/eth_rmii_loopback.asm /tmp/eth_rmii_loopback.hex
           python3 tools/assemble.py firmware/enc28j60_min_frame.asm /tmp/enc28j60_min_frame.hex
           cmp firmware/uart_tx_a5.hex /tmp/uart_tx_a5.hex
           cmp firmware/spi_mode0_nibble.hex /tmp/spi_mode0_nibble.hex
           cmp firmware/i2c_start_stop.hex /tmp/i2c_start_stop.hex
           cmp firmware/usb_ls_sync_pid.hex /tmp/usb_ls_sync_pid.hex
           cmp firmware/usb_ls_data0_crc.hex /tmp/usb_ls_data0_crc.hex
+          cmp firmware/usb_ls_device_lite.hex /tmp/usb_ls_device_lite.hex
+          cmp firmware/eth_rmii_min_frame.hex /tmp/eth_rmii_min_frame.hex
+          cmp firmware/eth_rmii_loopback.hex /tmp/eth_rmii_loopback.hex
           cmp firmware/enc28j60_min_frame.hex /tmp/enc28j60_min_frame.hex
 
       - name: Verify complete protocol processor
         run: |
-          iverilog -g2012 -Wall -s protocol_processor_tb -o protocol_processor_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv protocol_processor_tb.sv
+          iverilog -g2012 -Wall -s protocol_processor_tb -o protocol_processor_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv protocol_processor_tb.sv
           vvp protocol_processor_tb.out | tee protocol_processor.log
           grep -q "PASS: complete protocol processor ISA and timing verified" protocol_processor.log
 
       - name: Verify UART firmware
         run: |
-          iverilog -g2012 -Wall -s uart_firmware_tb -o uart_firmware_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv uart_firmware_tb.sv
+          iverilog -g2012 -Wall -s uart_firmware_tb -o uart_firmware_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv uart_firmware_tb.sv
           vvp uart_firmware_tb.out | tee uart_firmware.log
           grep -q "PASS: UART 0xA5 firmware timing verified at 1 Mbit/s" uart_firmware.log
 
       - name: Verify SPI firmware
         run: |
-          iverilog -g2012 -Wall -s spi_firmware_tb -o spi_firmware_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv spi_firmware_tb.sv
+          iverilog -g2012 -Wall -s spi_firmware_tb -o spi_firmware_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv spi_firmware_tb.sv
           vvp spi_firmware_tb.out | tee spi_firmware.log
           grep -q "PASS: SPI mode-0 firmware transmitted 0xA with exact timing" spi_firmware.log
 
       - name: Verify I2C firmware
         run: |
-          iverilog -g2012 -Wall -s i2c_firmware_tb -o i2c_firmware_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv i2c_firmware_tb.sv
+          iverilog -g2012 -Wall -s i2c_firmware_tb -o i2c_firmware_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv i2c_firmware_tb.sv
           vvp i2c_firmware_tb.out | tee i2c_firmware.log
           grep -q "PASS: open-drain I2C START/STOP firmware timing verified" i2c_firmware.log
 
@@ -86,29 +92,41 @@ jobs:
 
       - name: Verify Tiny Tapeout wrapper
         run: |
-          iverilog -g2012 -Wall -s tiny_tapeout_wrapper_tb -o tiny_tapeout_wrapper_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv tiny_tapeout_wrapper_tb.sv
+          iverilog -g2012 -Wall -s tiny_tapeout_wrapper_tb -o tiny_tapeout_wrapper_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv tiny_tapeout_wrapper_tb.sv
           vvp tiny_tapeout_wrapper_tb.out | tee tiny_tapeout_wrapper.log
           grep -q "PASS: Tiny Tapeout serial loading and execution verified" tiny_tapeout_wrapper.log
 
-      - name: Verify assist engine
+      - name: Verify serial engine
         run: |
-          iverilog -g2012 -Wall -s assist_engine_tb -o assist_engine_tb.out src/assist_engine.sv assist_engine_tb.sv
+          iverilog -g2012 -Wall -s assist_engine_tb -o assist_engine_tb.out src/assist_engine.sv src/serial_engine.sv assist_engine_tb.sv
           vvp assist_engine_tb.out | tee assist_engine.log
           grep -q "PASS: assist NRZI, bit stuffing, and USB CRC-16 verified" assist_engine.log
+          iverilog -g2012 -Wall -s serial_engine_tb -o serial_engine_tb.out src/serial_engine.sv serial_engine_tb.sv
+          vvp serial_engine_tb.out | tee serial_engine.log
+          grep -q "PASS: serial engine CRC-32 and RMII-10 hold verified" serial_engine.log
 
       - name: Verify USB LS firmware
         run: |
-          iverilog -g2012 -Wall -s usb_ls_firmware_tb -o usb_ls_firmware_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv usb_ls_firmware_tb.sv
+          iverilog -g2012 -Wall -s usb_ls_firmware_tb -o usb_ls_firmware_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv usb_ls_firmware_tb.sv
           vvp usb_ls_firmware_tb.out | tee usb_ls_firmware.log
           grep -q "PASS: USB LS SYNC/PID and DATA0 CRC firmware verified" usb_ls_firmware.log
+          iverilog -g2012 -Wall -s usb_ls_enumerate_tb -o usb_ls_enumerate_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv usb_ls_enumerate_tb.sv
+          vvp usb_ls_enumerate_tb.out | tee usb_ls_enumerate.log
+          grep -q "PASS: USB LS SET_ADDRESS and GET_DESCRIPTOR device-lite verified" usb_ls_enumerate.log
 
-      - name: Verify ENC28J60 SPI Ethernet firmware
+      - name: Verify RMII Ethernet MAC firmware
         run: |
-          iverilog -g2012 -Wall -s spi_eth_firmware_tb -o spi_eth_firmware_tb.out src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv spi_eth_firmware_tb.sv
+          iverilog -g2012 -Wall -s eth_rmii_loopback_tb -o eth_rmii_loopback_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv eth_rmii_loopback_tb.sv
+          vvp eth_rmii_loopback_tb.out | tee eth_rmii_loopback.log
+          grep -q "PASS: RMII-10 MAC loopback preamble, payload, CRC-32 verified" eth_rmii_loopback.log
+
+      - name: Verify generic SPI firmware example
+        run: |
+          iverilog -g2012 -Wall -s spi_eth_firmware_tb -o spi_eth_firmware_tb.out src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv spi_eth_firmware_tb.sv
           vvp spi_eth_firmware_tb.out | tee spi_eth_firmware.log
           grep -q "PASS: ENC28J60 SPI min-frame firmware verified" spi_eth_firmware.log
 
       - name: Lint and synthesize ASIC top level
         run: |
-          verilator --lint-only --timing -Wall -Wno-DECLFILENAME --top-module tt_um_dhruvauppaluri_protocol_emulator src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv
-          yosys -p "read_verilog -sv src/instruction_sram.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv; synth -top tt_um_dhruvauppaluri_protocol_emulator; check"
+          verilator --lint-only --timing -Wall -Wno-DECLFILENAME --top-module tt_um_dhruvauppaluri_protocol_emulator src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv
+          yosys -p "read_verilog -sv src/instruction_sram.sv src/serial_engine.sv src/pin_overlay.sv src/assist_engine.sv src/protocol_processor.sv src/serial_program_loader.sv src/protocol_classifier.sv src/tt_um_dhruvauppaluri_protocol_emulator.sv; synth -top tt_um_dhruvauppaluri_protocol_emulator; check"

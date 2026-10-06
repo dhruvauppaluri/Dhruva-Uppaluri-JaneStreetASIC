@@ -31,8 +31,8 @@ Before physical work, require all of the following:
 - every self-checking simulation prints `PASS`;
 - Verilator reports no unwaived RTL warnings;
 - Yosys finishes with no check errors, inferred latches, or undriven nets;
-- UART, SPI, I2C, USB LS, and ENC28J60 SPI firmware waveforms match their
-  protocol timing;
+- UART, SPI, I2C, USB LS device-lite, and RMII MAC firmware waveforms match
+  their protocol timing;
 - the Tiny Tapeout wrapper test passes through the real serial loading path.
 
 Write down the Git commit hash. Do not compare physical runs made from

@@ -11,10 +11,10 @@
 // ui_in[5] : restart loader address at zero
 // ui_in[6] : route classifier result to processor input bit 7
 // ui_in[7] : load: assist MMIO target; run: show PC[7:5] on uo_out[2:0]
-// uio[7:0]: bidirectional protocol pins
+// uio[7:0]: bidirectional protocol pins (Map A stretch overlay)
 //   uio[0] USB D+, uio[1] USB D-
-//   uio[2:5] Ethernet SPI SCK/MOSI/MISO/CS
-//   uio[6:7] Ethernet RST/INT
+//   uio[2] RMII TXD0, uio[3] RMII TXD1, uio[4] RMII TX_EN
+//   uio[5] RMII RXD0, uio[6] RMII RXD1, uio[7] RMII CRS_DV
 // uo_out[4:0] = PC[4:0] (or {2'b00, PC[7:5]} when ui_in[7] and run),
 // uo_out[5] = halted, [6] = waiting, [7] = protocol classifier result
 module tt_um_dhruvauppaluri_protocol_emulator (

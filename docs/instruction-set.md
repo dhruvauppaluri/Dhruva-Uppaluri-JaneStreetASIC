@@ -40,28 +40,37 @@ after the `WAIT` instruction. Therefore, two `OUT` instructions separated by
 ## Assist MMIO (reserved OUT / IN encodings)
 
 The same `OUT`/`IN` opcodes decode a reserved operand space that talks to a
-general-purpose assist engine (bit tick, NRZI pair driver, bit stuffing,
-USB CRC-16, 32-byte FIFO). These are **not** USB-named opcodes.
+general-purpose serial engine (bit tick, 1- or 2-bit shifter, NRZI+stuff or
+NRZ, CRC-16 or CRC-32, 64-byte packet RAM, TX and RX, pin overlay). These are
+**not** USB- or Ethernet-named opcodes.
 
 | Assembly | Encoding | Meaning |
 | --- | --- | --- |
-| `AOUT port, imm` | `OUT` with operand `[11:10]=01`, port in `[9:8]` | Write immediate to assist port 0..3 |
-| `AOUT port, Rn` | `OUT` with operand `[11:10]=11`, register in `[9:8]`, port in `[7:6]` | Write register to assist port |
-| `AIN Rn, port` | `IN` with operand `[11:10]=01`, port in `[1:0]` | Read assist port into a register |
+| `AOUT port, imm` | `OUT` with operand `[11:10]=01`, port in `[9:8]` | Write immediate to engine port 0..3 |
+| `AOUT port, Rn` | `OUT` with operand `[11:10]=11`, register in `[9:8]`, port in `[7:6]` | Write register to engine port |
+| `AIN Rn, port` | `IN` with operand `[11:10]=01`, port in `[1:0]` | Read engine port into a register |
 
 Ports:
 
 | Port | Write | Read |
 | --- | --- | --- |
-| 0 | Control (start, reset, stuff/NRZI/SE0/overlay) | Status (busy, FIFO, SE0, tick, line) |
-| 1 | Bit-tick period in clocks (USB LS uses 33 at 50 MHz) | CRC-16 high byte (wire value) |
-| 2 | Push TX FIFO | FIFO occupancy |
-| 3 | Feed CRC-16 | CRC-16 low byte (wire value) |
+| 0 | Control (TX/RX start, reset, stuff/NRZI/SE0/overlay) | Status (busy, RAM, SE0, RX ready, CRC ok) |
+| 1 | Bit-tick period in clocks (USB LS uses 33; RMII-10 uses 10) | CRC high byte (wire value) |
+| 2 | Push packet RAM | Pop RX byte (`AIN` advances the read index) |
+| 3 | Feed CRC, or MODE if `data[7:6]==11` | CRC low byte (wire value) |
 
-Status bit 3 is SE0: both selected assist pins are low on `gpio_in`. Firmware
-can poll that instead of a dedicated `WAIT_SE0` opcode. The assist keeps
-ticking while the CPU is in `WAIT` or `HALT` as long as run-mode `enable` is
-high.
+Control bits: `[0]` TX start, `[1]` soft reset, `[2]` stuff, `[3]` NRZI,
+`[4]` CRC reset, `[5]` RX start, `[6]` force SE0, `[7]` overlay. MODE
+`0xC0|flags`: `[0]` width-2, `[1]` CRC-32, `[2]` RMII, `[3]` append CRC,
+`[4]` auto EOP, `[5]` preamble/SFD.
+
+Status bit 3 is SE0: both USB pins are low on `gpio_in`. Firmware can poll
+that instead of a dedicated `WAIT_SE0` opcode. The engine keeps ticking while
+the CPU is in `WAIT` or `HALT` as long as run-mode `enable` is high.
+
+USB LS firmware programs period 33, width 1, NRZI+stuff, CRC-16. Ethernet
+firmware programs period 10, width 2, NRZ, CRC-32, RMII overlay on
+`uio[2:7]`. UART/SPI/I2C firmware does not have to use the engine.
 
 ## Programming interface
 
@@ -77,7 +86,7 @@ The Tiny Tapeout wrapper loads one word at a time:
 The loader address returns to zero on reset. Reset does not erase instruction
 memory, allowing a loaded program to be restarted.
 
-`ui_in[7]` while loading selects the assist MMIO as the write target (the
+`ui_in[7]` while loading selects the serial-engine MMIO as the write target (the
 same extra-target pattern as the classifier on `ui_in[4]`). While running,
 `ui_in[7]` muxes `PC[7:5]` onto `uo_out[2:0]` (`uo_out[4:3]` stay zero in
 that view). By default `uo_out[4:0]` still shows `PC[4:0]`, so programs

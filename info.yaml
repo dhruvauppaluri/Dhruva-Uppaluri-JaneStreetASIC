@@ -3,13 +3,16 @@ project:
   title:        "Programmable Protocol Emulator"
   author:       "Dhruva Uppaluri"
   discord:      ""
-  description:  "Cycle-accurate, firmware-programmable protocol emulator ASIC"
+  description:  "Firmware CPU with on-die USB SIE and 10M RMII MAC assists"
+
   language:     "SystemVerilog"
   clock_hz:     50000000
   tiles:        "6x4"
   top_module:   "tt_um_dhruvauppaluri_protocol_emulator"
   source_files:
     - "instruction_sram.sv"
+    - "serial_engine.sv"
+    - "pin_overlay.sv"
     - "assist_engine.sv"
     - "protocol_processor.sv"
     - "serial_program_loader.sv"
@@ -37,11 +40,11 @@ pinout:
 
   uio[0]: "USB D+ / protocol pin 0"
   uio[1]: "USB D- / protocol pin 1"
-  uio[2]: "Eth SPI SCK / protocol pin 2"
-  uio[3]: "Eth SPI MOSI / protocol pin 3"
-  uio[4]: "Eth SPI MISO / protocol pin 4"
-  uio[5]: "Eth SPI CS / protocol pin 5"
-  uio[6]: "Eth RST / protocol pin 6"
-  uio[7]: "Eth INT / protocol pin 7"
+  uio[2]: "RMII TXD0 / protocol pin 2"
+  uio[3]: "RMII TXD1 / protocol pin 3"
+  uio[4]: "RMII TX_EN / protocol pin 4"
+  uio[5]: "RMII RXD0 / protocol pin 5"
+  uio[6]: "RMII RXD1 / protocol pin 6"
+  uio[7]: "RMII CRS_DV / protocol pin 7"
 
 yaml_version: 6
