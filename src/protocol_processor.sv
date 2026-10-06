@@ -6,9 +6,15 @@
 // Programs are loaded through the write port while enable is low. The program
 // memory deliberately has no reset so an external reset restarts execution
 // without erasing the loaded protocol firmware.
+//
+// Instruction memory is an inferrable SRAM-style array (see instruction_sram).
+// A memory-mapped serial engine provides a programmable bit tick, 1- or 2-bit
+// shifter, NRZI+stuff or NRZ, CRC-16/CRC-32, 64-byte packet RAM, and TX/RX
+// pin overlay. Firmware reaches it through reserved OUT/IN encodings
+// (AOUT/AIN), not USB- or Ethernet-named opcodes.
 module protocol_processor #(
-    parameter integer PROGRAM_WORDS = 32,
-    parameter integer ADDRESS_WIDTH = 5
+    parameter integer PROGRAM_WORDS = 256,
+    parameter integer ADDRESS_WIDTH = $clog2(PROGRAM_WORDS)
 ) (
     input  wire                     clk,
     input  wire                     reset,
@@ -18,9 +24,13 @@ module protocol_processor #(
     input  wire [ADDRESS_WIDTH-1:0] program_address,
     input  wire [15:0]              program_data,
 
+    input  wire                     assist_cfg_we,
+    input  wire [1:0]               assist_cfg_address,
+    input  wire [7:0]               assist_cfg_data,
+
     input  wire [7:0]               gpio_in,
-    output reg  [7:0]               gpio_out,
-    output reg  [7:0]               gpio_oe,
+    output wire [7:0]               gpio_out,
+    output wire [7:0]               gpio_oe,
 
     output reg                      halted,
     output wire                     waiting,
@@ -44,12 +54,19 @@ localparam [3:0] OP_JNZ      = 4'hD;
 localparam [3:0] OP_WAIT_PIN = 4'hE;
 localparam [3:0] OP_HALT     = 4'hF;
 
-reg [15:0] instruction_memory [0:PROGRAM_WORDS-1];
+wire [15:0] instruction;
 reg [7:0] registers [0:3];
 reg [11:0] wait_count;
 reg wait_active;
+reg [7:0] pin_out;
+reg [7:0] pin_oe;
 
-wire [15:0] instruction = instruction_memory[pc];
+wire [7:0] assist_out;
+wire [7:0] assist_oe;
+wire [7:0] assist_rdata;
+wire [7:0] pin_out_w;
+wire [7:0] pin_oe_w;
+
 wire [3:0] opcode = instruction[15:12];
 wire [11:0] operand = instruction[11:0];
 wire [1:0] register_index = operand[9:8];
@@ -57,16 +74,65 @@ wire [ADDRESS_WIDTH-1:0] branch_address = operand[ADDRESS_WIDTH-1:0];
 wire [2:0] pin_index = operand[2:0];
 wire pin_level = operand[3];
 
+wire out_assist_imm = (opcode == OP_OUT) && (operand[11:10] == 2'b01);
+wire out_assist_reg = (opcode == OP_OUT) && (operand[11:10] == 2'b11);
+wire in_assist      = (opcode == OP_IN)  && (operand[11:10] == 2'b01);
+wire cpu_exec       = enable && !halted && !wait_active;
+wire cpu_assist_we  = cpu_exec && (out_assist_imm || out_assist_reg);
+wire [1:0] cpu_assist_addr = out_assist_reg ? operand[7:6] : operand[9:8];
+wire [7:0] cpu_assist_data =
+    out_assist_reg ? registers[register_index] : operand[7:0];
+
+wire assist_we = cpu_assist_we || assist_cfg_we;
+wire [1:0] assist_addr = cpu_assist_we ? cpu_assist_addr : assist_cfg_address;
+wire [7:0] assist_data = cpu_assist_we ? cpu_assist_data : assist_cfg_data;
+wire [1:0] assist_rd_addr = in_assist ? operand[1:0] : 2'd0;
+wire assist_rd_inc = cpu_exec && in_assist && (operand[1:0] == 2'd2);
+
 assign waiting = wait_active;
+assign pin_out_w = pin_out;
+assign pin_oe_w  = pin_oe;
+
+instruction_sram #(
+    .DEPTH(PROGRAM_WORDS)
+) imem (
+    .clk(clk),
+    .we(program_we),
+    .waddr(program_address),
+    .wdata(program_data),
+    .raddr(pc),
+    .rdata(instruction)
+);
+
+serial_engine engine (
+    .clk(clk),
+    .reset(reset),
+    .enable(enable),
+    .we(assist_we),
+    .wr_addr(assist_addr),
+    .wr_data(assist_data),
+    .rd_addr(assist_rd_addr),
+    .rd_inc(assist_rd_inc),
+    .rd_data(assist_rdata),
+    .gpio_in(gpio_in),
+    .assist_out(assist_out),
+    .assist_oe(assist_oe)
+);
+
+pin_overlay overlay (
+    .cpu_out(pin_out_w),
+    .cpu_oe(pin_oe_w),
+    .eng_out(assist_out),
+    .eng_oe(assist_oe),
+    .gpio_out(gpio_out),
+    .gpio_oe(gpio_oe)
+);
 
 always @(posedge clk) begin
-    if (program_we)
-        instruction_memory[program_address] <= program_data;
-
     if (reset) begin
         pc <= {ADDRESS_WIDTH{1'b0}};
-        gpio_out <= 8'h00;
-        gpio_oe <= 8'h00;
+        pin_out <= 8'h00;
+        pin_oe <= 8'h00;
         registers[0] <= 8'h00;
         registers[1] <= 8'h00;
         registers[2] <= 8'h00;
@@ -89,15 +155,17 @@ always @(posedge clk) begin
                 end
 
                 OP_OUT: begin
-                    if (operand[11])
-                        gpio_out <= registers[register_index];
+                    if (out_assist_imm || out_assist_reg) begin
+                        // Reserved decoder: write the serial-engine MMIO port.
+                    end else if (operand[11])
+                        pin_out <= registers[register_index];
                     else
-                        gpio_out <= operand[7:0];
+                        pin_out <= operand[7:0];
                     pc <= pc + {{(ADDRESS_WIDTH-1){1'b0}}, 1'b1};
                 end
 
                 OP_DIR: begin
-                    gpio_oe <= operand[7:0];
+                    pin_oe <= operand[7:0];
                     pc <= pc + {{(ADDRESS_WIDTH-1){1'b0}}, 1'b1};
                 end
 
@@ -112,7 +180,10 @@ always @(posedge clk) begin
                 end
 
                 OP_IN: begin
-                    registers[register_index] <= gpio_in;
+                    if (in_assist)
+                        registers[register_index] <= assist_rdata;
+                    else
+                        registers[register_index] <= gpio_in;
                     pc <= pc + {{(ADDRESS_WIDTH-1){1'b0}}, 1'b1};
                 end
 

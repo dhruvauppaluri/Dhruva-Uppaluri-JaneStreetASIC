@@ -31,7 +31,8 @@ Before physical work, require all of the following:
 - every self-checking simulation prints `PASS`;
 - Verilator reports no unwaived RTL warnings;
 - Yosys finishes with no check errors, inferred latches, or undriven nets;
-- UART, SPI, and I2C firmware waveforms match their protocol timing;
+- UART, SPI, I2C, USB LS device-lite, and RMII MAC firmware waveforms match
+  their protocol timing;
 - the Tiny Tapeout wrapper test passes through the real serial loading path.
 
 Write down the Git commit hash. Do not compare physical runs made from
@@ -102,9 +103,16 @@ In the GUI, identify:
 - dense or empty regions;
 - any cells outside rows or unexpected blockages.
 
-For this project, pay particular attention to the 32-by-16 instruction memory.
-It is currently synthesized from RTL registers rather than instantiated as an
-SRAM macro, so it may occupy a substantial fraction of the standard-cell area.
+Generic Yosys `synth` of this stretch-goal top reports about **11,610**
+cells (including ~4,360 flip-flops from mapping the 256×16 IMEM). The
+competition heuristic of ~1k cells/tile on a 6×4 die is ~24k, so the
+pre-mapping number is inside the crude budget, but routing of a
+flip-flop IMEM can still fail. That is why `instruction_sram.sv` is written
+as a drop-in for a TT IHP SRAM wrapper. If placement or routing fails, lower
+`PL_TARGET_DENSITY_PCT` in `src/config.json` from 60 toward 50. Re-run the
+hosted GDS workflow (`.github/workflows/gds.yaml`,
+`tt-gds-action@ihp-cmos5l`, `pdk: ihp-sg13cmos5l`). This stretch-goal
+revision did not re-run LibreLane locally.
 
 Exit criterion: the design fits its allocated 6x4 tiles without illegal
 geometry, obviously disconnected regions, or unreasonably high utilization.
@@ -181,7 +189,9 @@ In KLayout, visually follow at least one path through each of these structures:
 - reset and run control;
 - serial loader shift register into instruction memory;
 - program counter and instruction decode;
-- GPIO output and output-enable paths;
+- GPIO output and output-enable paths, including the assist overlay on the
+  USB pair;
+- assist ticker, NRZI/stuff/CRC, and FIFO;
 - classifier datapath;
 - clock tree and power distribution.
 
