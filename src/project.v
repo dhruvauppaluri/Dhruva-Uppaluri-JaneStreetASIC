@@ -1,0 +1,254 @@
+/*
+ * SETL -- Sparse Event-Transition Lanes
+ * A post-fabrication reprogrammable protocol emulator for Tiny Tapeout / IHP SG13CMOS5L.
+ *
+ * Pins
+ *   ui[7] host SCK, ui[6] host MOSI, ui[5] host CS_n, uo[7] host MISO
+ *   all other pins belong to the lanes (outputs through OMAP registers,
+ *   inputs through the per-state ISEL field)
+ *
+ * SPDX-License-Identifier: MIT
+ */
+`default_nettype none
+
+module tt_um_dhruvauppaluri_setl (
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out,
+    input  wire [7:0] uio_in,
+    output wire [7:0] uio_out,
+    output wire [7:0] uio_oe,
+    input  wire       ena,
+    input  wire       clk,
+    input  wire       rst_n
+);
+    localparam NL = 4;
+
+    // ------------------------------------------------------------ sync
+    reg [15:0] s1, s2;
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) begin s1 <= 16'd0; s2 <= 16'd0; end
+        else begin s1 <= {uio_in, ui_in}; s2 <= s1; end
+
+    // ------------------------------------------------------- globals
+    reg        mode4;
+    reg [3:0]  run;
+    reg [3:0]  hflag;
+    reg [1:0]  slot;
+    reg [3:0]  ev, ovf;
+
+    // per-lane configuration
+    reg        c_msb   [0:NL-1];
+    reg [8:0]  c_start [0:NL-1];
+    reg [7:0]  c_div   [0:NL-1];
+    reg [15:0] c_ta    [0:NL-1];
+    reg [15:0] c_tb    [0:NL-1];
+    reg [6:0]  c_omap  [0:4*NL-1];
+    reg [3:0]  c_oinit [0:NL-1];
+    reg [7:0]  c_match [0:NL-1];
+    reg [7:0]  c_mask  [0:NL-1];
+
+    // ------------------------------------------------------- host
+    wire       reg_we, reg_commit, reg_rside;
+    wire [7:0] reg_waddr, reg_wdata, reg_raddr, reg_caddr;
+    reg  [7:0] reg_rdata;
+    wire       hmem_req, hmem_we;
+    wire [11:0] hmem_baddr;
+    wire [7:0] hmem_wbyte;
+    wire       hmem_gnt;
+    reg        hmem_rvalid;
+    wire       miso;
+    wire [63:0] mem_rdata;
+
+    setl_host host (
+        .clk(clk), .rst_n(rst_n),
+        .sck(s2[7]), .mosi(s2[6]), .csn(s2[5]), .miso(miso),
+        .reg_we(reg_we), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata),
+        .reg_raddr(reg_raddr), .reg_rdata(reg_rdata), .reg_rside(reg_rside),
+        .reg_commit(reg_commit), .reg_caddr(reg_caddr),
+        .mem_req(hmem_req), .mem_we(hmem_we), .mem_baddr(hmem_baddr), .mem_wbyte(hmem_wbyte),
+        .mem_gnt(hmem_gnt), .mem_rvalid(hmem_rvalid), .mem_rdata(mem_rdata)
+    );
+
+    // ------------------------------------------------------- lanes
+    wire [4*NL-1:0] slot_val_v;
+    wire [NL-1:0] flag, ev_set, ovf_set, fetch_req;
+    wire [9*NL-1:0] fetch_addr_v, pc_v;
+    wire [8*NL-1:0] rx_head_v, sr_v, cnt_v;
+    wire [3*NL-1:0] tx_level_v, rx_level_v;
+    wire [6:0]  uo_int;
+    wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_int, s2};
+
+    reg         rd_valid;
+    reg  [1:0]  rd_lane;
+    wire [3:0]  start = (reg_we && reg_waddr == 8'h81) ? (reg_wdata[3:0] & ~run) : 4'd0;
+
+    genvar i;
+    generate
+        for (i = 0; i < NL; i = i + 1) begin : g_lane
+            wire slot_me = (slot == i) && (mode4 || i < 2);
+            setl_lane #(.IDX(i)) lane (
+                .clk(clk), .rst_n(rst_n),
+                .start(start[i]), .run(run[i]), .slot_me(slot_me),
+                .in_vec(in_vec), .hflag(hflag[i]),
+                .cfg_msb(c_msb[i]), .cfg_start(c_start[i]), .cfg_div(c_div[i]),
+                .cfg_ta(c_ta[i]), .cfg_tb(c_tb[i]), .cfg_match(c_match[i]), .cfg_mask(c_mask[i]),
+                .cfg_outinit(c_oinit[i]),
+                .fetch_req(fetch_req[i]), .fetch_addr(fetch_addr_v[9*i +: 9]),
+                .rd_me(rd_valid && rd_lane == i), .rd_data(mem_rdata),
+                .host_push(reg_we && reg_waddr == (i * 16 + 15)), .host_wdata(reg_wdata),
+                .host_pop(reg_commit && reg_caddr == (i * 16 + 15)),
+                .rx_head(rx_head_v[8*i +: 8]), .tx_level(tx_level_v[3*i +: 3]),
+                .rx_level(rx_level_v[3*i +: 3]),
+                .slot_val(slot_val_v[4*i +: 4]), .flag(flag[i]),
+                .event_set(ev_set[i]), .ovf_set(ovf_set[i]),
+                .pc_o(pc_v[9*i +: 9]), .sr_o(sr_v[8*i +: 8]), .cnt_o(cnt_v[8*i +: 8])
+            );
+        end
+    endgenerate
+
+    // ------------------------------------------------------- memory
+    wire        lane_req = |fetch_req;
+    wire [8:0]  lane_addr = fetch_addr_v[9*slot +: 9];
+    assign hmem_gnt = hmem_req & ~lane_req;
+    wire        mem_en = lane_req | hmem_gnt;
+    wire        mem_we = ~lane_req & hmem_we;
+    wire [8:0]  mem_addr = lane_req ? lane_addr : hmem_baddr[11:3];
+    wire [5:0]  bsh = {3'd7 - hmem_baddr[2:0], 3'd0};
+    wire [63:0] mem_wdata = {56'd0, hmem_wbyte} << bsh;
+    wire [63:0] mem_bmask = {56'd0, 8'hFF} << bsh;
+
+    setl_mem mem (
+        .clk(clk), .en(mem_en), .we(mem_we), .addr(mem_addr),
+        .wdata(mem_wdata), .bmask(mem_bmask), .rdata(mem_rdata)
+    );
+
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) begin
+            rd_valid <= 1'b0; rd_lane <= 2'd0; hmem_rvalid <= 1'b0;
+        end else begin
+            rd_valid <= lane_req;
+            rd_lane <= slot;
+            hmem_rvalid <= hmem_gnt & ~hmem_we;
+        end
+
+    // ------------------------------------------------------- registers
+    integer k;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            mode4 <= 1'b0; run <= 4'd0; hflag <= 4'd0; slot <= 2'd0;
+            ev <= 4'd0; ovf <= 4'd0;
+            for (k = 0; k < NL; k = k + 1) begin
+                c_msb[k] <= 1'b0; c_start[k] <= 9'd0; c_div[k] <= 8'd0;
+                c_ta[k] <= 16'd0; c_tb[k] <= 16'd0; c_oinit[k] <= 4'hF;
+                c_match[k] <= 8'd0; c_mask[k] <= 8'd0;
+            end
+            for (k = 0; k < 4 * NL; k = k + 1) c_omap[k] <= 7'h1F;
+        end else begin
+            slot <= mode4 ? slot + 2'd1 : {1'b0, ~slot[0]};
+            ev  <= ev | ev_set;
+            ovf <= ovf | ovf_set;
+            if (reg_we) begin
+                if (reg_waddr < 8'h40) begin
+                    case (reg_waddr[3:0])
+                        4'h0: c_msb[reg_waddr[5:4]] <= reg_wdata[0];
+                        4'h1: c_start[reg_waddr[5:4]][7:0] <= reg_wdata;
+                        4'h2: c_start[reg_waddr[5:4]][8] <= reg_wdata[0];
+                        4'h3: c_div[reg_waddr[5:4]] <= reg_wdata;
+                        4'h4: c_ta[reg_waddr[5:4]][7:0] <= reg_wdata;
+                        4'h5: c_ta[reg_waddr[5:4]][15:8] <= reg_wdata;
+                        4'h6: c_tb[reg_waddr[5:4]][7:0] <= reg_wdata;
+                        4'h7: c_tb[reg_waddr[5:4]][15:8] <= reg_wdata;
+                        4'h8, 4'h9, 4'hA, 4'hB:
+                              c_omap[{reg_waddr[5:4], reg_waddr[1:0]}] <= reg_wdata[6:0];
+                        4'hC: c_oinit[reg_waddr[5:4]] <= reg_wdata[3:0];
+                        4'hD: c_match[reg_waddr[5:4]] <= reg_wdata;
+                        4'hE: c_mask[reg_waddr[5:4]] <= reg_wdata;
+                        default: ;  // 4'hF: TX FIFO push (inside the lane)
+                    endcase
+                end else begin
+                    case (reg_waddr)
+                        8'h80: mode4 <= reg_wdata[0];
+                        8'h81: run <= reg_wdata[3:0];
+                        8'h85: hflag <= reg_wdata[3:0];
+                        8'h88, 8'h89, 8'h8A, 8'h8B: begin
+                            if (reg_wdata[6]) ev[reg_waddr[1:0]] <= ev_set[reg_waddr[1:0]];
+                            if (reg_wdata[7]) ovf[reg_waddr[1:0]] <= ovf_set[reg_waddr[1:0]];
+                        end
+                        default: ;
+                    endcase
+                end
+            end
+        end
+    end
+
+    // register read mux
+    wire [1:0] rl = reg_raddr[5:4];
+    wire [1:0] gl = reg_raddr[1:0];
+    assign reg_rside = (reg_raddr < 8'h40) && (reg_raddr[3:0] == 4'hF) && (rx_level_v[3*rl +: 3] != 3'd0);
+    always @(*) begin
+        reg_rdata = 8'h00;
+        if (reg_raddr < 8'h40) begin
+            case (reg_raddr[3:0])
+                4'h0: reg_rdata = {7'd0, c_msb[rl]};
+                4'h1: reg_rdata = c_start[rl][7:0];
+                4'h2: reg_rdata = {7'd0, c_start[rl][8]};
+                4'h3: reg_rdata = c_div[rl];
+                4'h4: reg_rdata = c_ta[rl][7:0];
+                4'h5: reg_rdata = c_ta[rl][15:8];
+                4'h6: reg_rdata = c_tb[rl][7:0];
+                4'h7: reg_rdata = c_tb[rl][15:8];
+                4'h8, 4'h9, 4'hA, 4'hB: reg_rdata = {1'b0, c_omap[{rl, reg_raddr[1:0]}]};
+                4'hC: reg_rdata = {4'd0, c_oinit[rl]};
+                4'hD: reg_rdata = c_match[rl];
+                4'hE: reg_rdata = c_mask[rl];
+                4'hF: reg_rdata = (rx_level_v[3*rl +: 3] != 3'd0) ? rx_head_v[8*rl +: 8] : 8'h00;
+            endcase
+        end else begin
+            case (reg_raddr)
+                8'h80: reg_rdata = {7'd0, mode4};
+                8'h81: reg_rdata = {4'd0, run};
+                8'h82: reg_rdata = 8'h5E;
+                8'h83: reg_rdata = 8'h01;
+                8'h84: reg_rdata = {flag, ev};
+                8'h85: reg_rdata = {4'd0, hflag};
+                8'h88, 8'h89, 8'h8A, 8'h8B:
+                       reg_rdata = {ovf[gl], ev[gl], rx_level_v[3*gl +: 3], tx_level_v[3*gl +: 3]};
+                8'h8C, 8'h8D, 8'h8E, 8'h8F: reg_rdata = pc_v[9*gl +: 8];
+                8'h90, 8'h91, 8'h92, 8'h93: reg_rdata = sr_v[8*gl +: 8];
+                8'h94, 8'h95, 8'h96, 8'h97: reg_rdata = cnt_v[8*gl +: 8];
+                8'h98: reg_rdata = {4'd0, pc_v[35], pc_v[26], pc_v[17], pc_v[8]};
+                default: reg_rdata = 8'h00;
+            endcase
+        end
+    end
+
+    // ------------------------------------------------------- pins
+    reg [6:0] uo_r;
+    reg [7:0] uio_o, uio_e;
+    integer l, s;
+    always @(*) begin
+        uo_r = 7'd0; uio_o = 8'd0; uio_e = 8'd0;
+        for (l = 0; l < NL; l = l + 1)
+            for (s = 0; s < 4; s = s + 1) begin : pinmux
+                reg [6:0] m;
+                reg v;
+                m = c_omap[l * 4 + s];
+                v = slot_val_v[l * 4 + s] ^ m[6];
+                if (m[4:0] <= 5'd6)
+                    uo_r[m[2:0]] = uo_r[m[2:0]] | v;
+                else if (m[4:3] == 2'b01) begin
+                    if (m[5]) uio_e[m[2:0]] = uio_e[m[2:0]] | ~v;
+                    else begin
+                        uio_o[m[2:0]] = uio_o[m[2:0]] | v;
+                        uio_e[m[2:0]] = 1'b1;
+                    end
+                end
+            end
+    end
+    assign uo_int  = uo_r;
+    assign uo_out  = {miso, uo_r};
+    assign uio_out = uio_o;
+    assign uio_oe  = uio_e;
+
+    wire _unused = &{ena, 1'b0};
+endmodule

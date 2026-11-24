@@ -1,0 +1,25 @@
+; SPI controller, MSB first (lane CTRL msb=1).
+; slots: 0 = SCK, 1 = MOSI, 2 = CS_n.   TA = half SCK period - 1 (ticks).
+; CPOL=1 (modes 2/3): set the invert bit on SCK's OMAP entry -- same program.
+; Every byte pushed to the TX FIFO is sent; the byte received is pushed to RX.
+; CS stays low while the TX FIFO keeps supplying bytes.
+.pin miso ui1
+.in miso
+
+; CPHA=0 (modes 0 and 2): sample on the leading edge
+.lane spi_cpha0
+s0_idle:  set 0=0 2=1 wait txready                         goto s0_load
+s0_load:  pop set 2=0 out 1 cnt=8 timer=TA wait timer      goto s0_lead
+s0_lead:  set 0=1 shift dec timer=TA wait timer            goto s0_trail
+s0_trail: set 0=0 out 1 timer=TA wait timer                if cnt0 goto s0_done else s0_lead
+s0_done:  push                                             if txready goto s0_load else s0_end
+s0_end:   set 2=1 timer=TA wait timer                      goto s0_idle
+
+; CPHA=1 (modes 1 and 3): drive on the leading edge, sample on the trailing edge
+.lane spi_cpha1
+s1_idle:  set 0=0 2=1 wait txready                         goto s1_load
+s1_load:  pop set 2=0 cnt=8 timer=TA wait timer            goto s1_lead
+s1_lead:  set 0=1 out 1 timer=TA wait timer                goto s1_trail
+s1_trail: set 0=0 shift dec timer=TA wait timer            if cnt0 goto s1_done else s1_lead
+s1_done:  push                                             if txready goto s1_load else s1_end
+s1_end:   set 2=1 timer=TA wait timer                      goto s1_idle

@@ -1,0 +1,55 @@
+; I2C controller (open-drain SCL/SDA), MSB first (CTRL msb=1).
+; slots: 0 = SCL (od), 1 = SDA (od).  TA = half SCL period - 1, TB = quarter period - 1.
+; MATCH = 0x01, MASK = 0x01 (detects the R/W bit of the address byte).
+; Host usage:
+;   write: push [addr<<1, d0, d1, ...]        keep the FIFO fed; STOP when it runs dry
+;   read : push [addr<<1 | 1, t, t, ...]      one token per byte to read; data arrives in RX
+; A NACK raises the lane's host event, discards the rest of the queued
+; transaction and ends with STOP.
+; Clock stretching is honoured (each SCL release waits until SCL reads high).
+; The lane flag marks "the next ACK belongs to the address byte"
+; (written for lane 0: `in flag0`; change to flagN when loading on lane N).
+.pin scl uio0
+.pin sda uio1
+.in sda
+.lane i2c
+i_idle:   set 0=1 1=1 wait txready                         goto i_start
+i_start:  set 1=0 timer=TA wait timer                      goto i_addr
+i_addr:   set 0=0 pop cnt=8 flag set timer=TB wait timer   goto wb1
+; ---- write one byte (SCL low on entry) ----
+wb0:      set 0=0 timer=TB wait timer                      goto wb1
+wb1:      out 1 timer=TB wait timer                        goto wb2
+wb2:      set 0=1 in scl wait pin                          goto wb3
+wb3:      shift dec timer=TA wait timer                    if cnt0 goto ack0 else wb0
+; ---- read the target's ACK ----
+ack0:     set 0=0 timer=TB wait timer                      goto ack1
+ack1:     set 1=1 timer=TB wait timer                      goto ack2
+ack2:     set 0=1 in scl wait pin                          goto ack3
+ack3:     timer=TA wait timer                              if pin goto nack else acked
+nack:     event                                            goto flush
+flush:                                                     if txready goto flushp else stop
+flushp:   pop                                              goto flush
+acked:    in flag0                                         if pin goto afirst else wnext
+afirst:   flag clr                                         if match goto rd0 else wnext
+wnext:                                                     if txready goto wload else stop
+wload:    pop cnt=8                                        goto wb0
+; ---- read bytes: one TX token per byte ----
+rd0:      pop cnt=8                                        goto rb0
+rb0:      set 0=0 timer=TB wait timer                      goto rb1
+rb1:      set 1=1 timer=TB wait timer                      goto rb2
+rb2:      set 0=1 in scl wait pin                          goto rb3
+rb3:      shift dec timer=TA wait timer                    if cnt0 goto rdone else rb0
+rdone:    push                                             goto rk0
+rk0:      set 0=0 timer=TB wait timer                      if txready goto rack else rnack
+rack:     set 1=0 timer=TB wait timer                      goto rk2
+rnack:    set 1=1 timer=TB wait timer                      goto rk2n
+rk2:      set 0=1 in scl wait pin                          goto rk3
+rk3:      timer=TA wait timer                              goto rd0
+rk2n:     set 0=1 in scl wait pin                          goto rk3n
+rk3n:     timer=TA wait timer                              goto stop
+; ---- STOP ----
+stop:     set 0=0 timer=TB wait timer                      goto st1
+st1:      set 1=0 timer=TB wait timer                      goto st2
+st2:      set 0=1 in scl wait pin                          goto st3
+st3:      timer=TA wait timer                              goto st4
+st4:      set 1=1 timer=TA wait timer                      goto i_idle

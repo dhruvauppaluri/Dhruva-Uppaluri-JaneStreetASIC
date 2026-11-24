@@ -1,4 +1,4 @@
-name: Build IHP CMOS5L GDS
+name: gds
 
 on:
   push:
@@ -8,31 +8,40 @@ jobs:
   gds:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository
+      - name: checkout repo
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Build GDS
-        uses: TinyTapeout/tt-gds-action@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action@ttihp27a
         with:
-          pdk: ihp-sg13cmos5l
+          pdk: ihp-sg13cmos5l # or ihp-sg13g2
 
   precheck:
     needs: gds
     runs-on: ubuntu-24.04
     steps:
-      - name: Run Tiny Tapeout precheck
-        uses: TinyTapeout/tt-gds-action/precheck@ihp-cmos5l
+      - name: Run Tiny Tapeout Precheck
+        uses: TinyTapeout/tt-gds-action/precheck@ttihp27a
 
-  gate-level-test:
+  gl_test:
     needs: gds
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository
+      - name: checkout repo
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Run gate-level test
-        uses: TinyTapeout/tt-gds-action/gl_test@ihp-cmos5l
+      - name: GL test
+        uses: TinyTapeout/tt-gds-action/gl_test@ttihp27a
+
+  viewer:
+    needs: gds
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment originates from an appropriate source
+    steps:
+      - uses: TinyTapeout/tt-gds-action/viewer@ttihp27a

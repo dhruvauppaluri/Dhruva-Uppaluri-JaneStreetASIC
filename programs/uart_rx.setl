@@ -1,0 +1,11 @@
+; UART receiver, 8N1, LSB first.  .pin rx selects the input.
+; TA = ticks per bit - 1.   TB = ticks from start edge to middle of bit 0 minus 2
+; (= round(1.5 * bit) - 2).  Raises a host event if the stop bit is low (framing error).
+.pin rx ui0
+.in rx
+.lane uart_rx
+rx_idle:  cnt=8 wait !pin                                  goto rx_first
+rx_first: timer=TB wait timer                              goto rx_bit
+rx_bit:   shift dec timer=TA wait timer                    if cnt0 goto rx_stop else rx_bit
+rx_stop:  push                                             if pin goto rx_idle else rx_ferr
+rx_ferr:  event wait pin                                   goto rx_idle

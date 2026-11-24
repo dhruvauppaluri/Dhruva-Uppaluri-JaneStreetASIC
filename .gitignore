@@ -1,23 +1,21 @@
-# Questa / ModelSim generated files
-work/
-transcript
-vsim.wlf
-*.wlf
-*.mpf
-*.cr.mti
-
-# Quartus generated files
-db/
-incremental_db/
-output_files/
-*.qws
-*.smsg
-c5_pin_model_dump.txt
-
-# Editor and backup files
-.sigasi/
-project.sigasi
-*.bak
-*~
-# Local open-source simulation and synthesis outputs
-build/
+.DS_Store
+.idea
+*.vcd
+*.fst
+*.fst.hier
+runs
+tt_submission
+src/user_config.json
+src/config_merged.json
+test/sim_build
+test/__pycache__/
+test/results.xml
+test/gate_level_netlist.v
+__pycache__/
+*.pyc
+test/sim_build/
+test/results.xml
+test/tb.fst
+runs/
+test/backdoor.hex
+test/results_small.xml

@@ -1,0 +1,7 @@
+; UART transmitter, 8N1, LSB first.
+; slot 0 = TX.   TA = ticks per bit - 1.   OUTINIT bit0 = 1 (idle high).
+.lane uart_tx
+tx_idle:  wait txready                                     goto tx_start
+tx_start: pop set 0=0 cnt=8 timer=TA wait timer            goto tx_bit
+tx_bit:   out 0 shift dec timer=TA wait timer              if cnt0 goto tx_stop else tx_bit
+tx_stop:  set 0=1 timer=TA wait timer                      if txready goto tx_start else tx_idle

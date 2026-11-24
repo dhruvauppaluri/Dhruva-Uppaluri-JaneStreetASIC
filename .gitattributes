@@ -1,4 +1,8 @@
+*.v text eol=lf
 *.sv text eol=lf
+*.py text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
+*.yaml text eol=lf
+*.setl text eol=lf
 LICENSE text eol=lf
