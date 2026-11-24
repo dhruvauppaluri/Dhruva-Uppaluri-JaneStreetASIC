@@ -1,0 +1,21 @@
+; MODBUS RTU receiver with on-chip CRC check, 8N1, LSB first.
+; CTRL = CTRL_CRC | CTRL_CRC_IN (CRC fed by the received bits), poly 0xA001,
+; init 0xFFFF, residue 0.  TA = ticks/bit - 1, TB = 1.5 bits - 2.
+; All bytes (including the CRC) go to RX.  A frame ends after CNT_GAP bit times
+; of silence; a bad CRC raises the lane's host event.
+.const CNT_GAP 35
+.pin rx ui0
+.in rx
+.lane modbus_rx
+r_idle:   crc clr                                         goto r_wait
+r_wait:   cnt=8 wait !pin                                 goto r_first
+r_first:  timer=TB wait timer                             goto r_bit
+r_bit:    shift dec timer=TA wait timer                   if cnt0 goto r_stop else r_bit
+r_stop:   push                                            goto r_gap
+r_gap:    cnt=CNT_GAP                                     goto r_g2
+r_g2:     dec timer=TA wait edge_or_timer                 if !pin goto r_sb else r_g3
+r_g3:                                                     if !pin goto r_sb else r_g4
+r_g4:                                                     if cnt0 goto r_end else r_g2
+r_sb:     cnt=8 timer=TB wait timer                       goto r_bit
+r_end:                                                    if crcok goto r_idle else r_bad
+r_bad:    event                                           goto r_idle

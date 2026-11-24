@@ -453,3 +453,58 @@ async def test_learn_and_impersonate(dut):
     assert mcu.stretched > 0, "the target never needed to stretch"
     dut._log.info(f"impersonation: {fake}; SCL stretched for {mcu.stretched} clocks")
     h.check()
+
+
+@cocotb.test()
+async def test_modbus_crc(dut):
+    """MODBUS RTU: lane 0 appends CRC-16 on chip, lane 1 receives it through the
+    on-chip readback and checks the CRC, lane 2 receives a corrupted frame from
+    the testbench and flags the CRC error."""
+    h, host = await setup(dut)
+    with open(os.path.join(PROG, "modbus_tx.setl")) as f:
+        tx_img, tx_sym, _ = assemble(f.read())
+    with open(os.path.join(PROG, "modbus_rx.setl")) as f:
+        rx_src = f.read()
+    rx1_img, rx1_sym, _ = assemble(".org 16\n" + rx_src.replace(".pin rx ui0", ".pin rx uo0"))
+    rx2_img, rx2_sym, _ = assemble(".org 32\n" + rx_src)
+    await host.load_image({**tx_img, **rx1_img, **rx2_img})
+    await host.set_mode4(True)
+    bit = 64                                   # ticks/bit, 4-lane barrel -> 256 clocks (~234 kbaud)
+    tbv = round(1.5 * bit) - 2
+    rx_ctrl = isa.CTRL_CRC | isa.CTRL_CRC_IN
+    await host.config_lane(0, start=tx_sym["modbus_tx"], ta=bit - 1, outmap=["uo0"], ctrl=isa.CTRL_CRC)
+    await host.config_lane(1, start=rx1_sym["modbus_rx"], ta=bit - 1, tb=tbv, ctrl=rx_ctrl)
+    await host.config_lane(2, start=rx2_sym["modbus_rx"], ta=bit - 1, tb=tbv, ctrl=rx_ctrl)
+    for lane in range(3):
+        await host.config_crc(lane, poly=0xA001, init=0xFFFF, residue=0)
+    h.set_ui(0, 1)
+    frame = [0x01, 0x03, 0x00, 0x00, 0x00, 0x0A]
+    # a frame ends when the TX FIFO runs dry, so preload it and top it up at once
+    await host.push(0, frame[:4])
+    got = {1: [], 2: []}
+    draining = True
+
+    async def drain():                         # the host empties both RX FIFOs continuously
+        while draining:
+            for lane in (1, 2):
+                n = (await host.status(lane))["rx"]
+                if n:
+                    got[lane] += list(await host.pop(lane, n))
+    rx = cocotb.start_soon(bfm.uart_recv(dut.clk, lambda: h.uo_level(0), 4 * bit, 8))
+    drainer = cocotb.start_soon(drain())
+    await host.run(0b0111)
+    await feed(host, 0, frame[4:])
+    wire = await rx
+    assert wire == frame + [0xC5, 0xCD], [hex(x) for x in wire]
+    await ClockCycles(dut.clk, 4 * bit * 40)   # inter-frame silence: lane 1 closes the frame
+    assert got[1] == frame + [0xC5, 0xCD], [hex(x) for x in got[1]]
+    assert (await host.status(1))["event"] == 0, "good frame flagged"
+    # a corrupted frame into lane 2
+    bad = frame + [0xC5, 0xCE]
+    await bfm.uart_send(dut.clk, lambda v: h.set_ui(0, v), 4 * bit, bytes(bad))
+    await ClockCycles(dut.clk, 4 * bit * 40)
+    draining = False
+    await drainer
+    assert got[2] == bad, [hex(x) for x in got[2]]
+    assert (await host.status(2))["event"] == 1, "bad CRC not flagged"
+    h.check()

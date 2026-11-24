@@ -21,8 +21,8 @@ lanes. A UART transmitter is 4 words. An I²C controller with clock stretching i
 Nothing in the silicon knows any protocol. The hardware provides a small, general
 **datapath contract**:
 
-* a 16-bit timer, an 8-bit counter, an 8-bit shift register (either bit order), and a
-  16-bit stopwatch;
+* a 16-bit timer, an 8-bit counter, an 8-bit shift register (either bit order), a
+  16-bit stopwatch, and a programmable 16-bit CRC/LFSR with a ones-run counter;
 * 4-deep TX and RX FIFOs to the host;
 * 4 output slots per lane, each routed to any pin as push-pull or open-drain, optionally
   inverted;
@@ -44,10 +44,14 @@ far cover twelve roles and protocols:
 | JTAG adapter | 8 | (TMS, TDI) pairs in, TDO out; the host walks the TAP |
 | PS/2 receiver | 6 | device-clocked |
 | WS2812 LED driver | 8 | pulse-width encoding |
+| MODBUS RTU TX / RX | 12 + 12 | CRC-16 appended and checked **on chip**; end of frame detected by line silence |
 
-None of these needed a hardware change. The one hardware feature added during
-development was the stopwatch (two spare record bits), which made on-chip auto-baud
-possible.
+None of these needed a protocol-specific hardware change. Two general features were
+added during development. The stopwatch (two spare record bits) enables on-chip
+auto-baud. A programmable CRC/LFSR with a ones-run counter (any polynomial up to 16 bits,
+either shift direction) moves CRC generation and checking, and the detection of
+bit-stuffing points, onto the chip, as the brief asks for USB- and Ethernet-class
+protocols.
 
 ## Things the architecture makes possible
 
@@ -140,9 +144,9 @@ Four independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
 * The FIFOs are 4 deep. Fast captures need a responsive host, or the deeper SRAM FIFO on
   the roadmap.
 * The shift register, FIFOs and counter are 8 bits wide. Longer frames take extra states.
-* 10BASE-T needs 50 ns events: run the chip at 40 MHz with 2 lanes, or add the planned
-  serializer. USB low-speed needs the planned CRC and bit-stuffing assist to be
-  practical.
+* 10BASE-T needs 50 ns events: run the chip at 40 MHz with 2 lanes, or add a serializer.
+  USB low-speed has the CRC and stuffing-detection building blocks, but no USB program
+  has been written or tested yet.
 * The formal proofs are bounded (several full transactions from reset). Unbounded
   proofs need inductive invariants.
 * No silicon exists yet. Pad timing and the CMOS5L SRAM power scheme are unproven on

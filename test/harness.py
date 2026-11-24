@@ -12,7 +12,7 @@ import sys
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, Lock, RisingEdge
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 from setl import isa, model  # noqa: E402
@@ -39,6 +39,7 @@ class Harness:
         self.uio_out = 0
         self.uio_oe = 0
         self.uio_in = 0xFF
+        self.spi_lock = Lock()   # one host SPI transaction at a time
 
     def _xfer_sync_unsupported(self, data):
         raise RuntimeError("use 'await h.xfer(...)' / Host wrappers in cocotb")
@@ -96,7 +97,7 @@ class Harness:
         # uo[7] is host MISO (SPI shell, not modelled); compare only driven uio bits
         bad = ((muo ^ self.uo) & 0x7F) or moe != self.uio_oe or ((mout ^ self.uio_out) & moe)
         # internal lane state is compared too: divergence is caught at its source
-        names = ("pc", "valid", "pending", "first", "timer", "cnt", "sr", "slot_val", "flag", "sw")
+        names = ("pc", "valid", "pending", "first", "timer", "cnt", "sr", "slot_val", "flag", "sw", "crc", "ones")
         diff = []
         for i, L in enumerate(m.lanes):
             rl = up.g_lane[i].lane
@@ -126,6 +127,10 @@ class Harness:
 
     # ------------------------------------------------------------ host SPI
     async def xfer(self, data):
+        async with self.spi_lock:
+            return await self._xfer(data)
+
+    async def _xfer(self, data):
         d = self.dut
         out = []
         self.host_bits = 0x00  # CS low, SCK low

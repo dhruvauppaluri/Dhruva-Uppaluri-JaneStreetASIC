@@ -37,7 +37,10 @@ module tt_um_dhruvauppaluri_setl (
     reg [3:0]  ev, ovf;
 
     // per-lane configuration
-    reg        c_msb   [0:NL-1];
+    reg  [7:0] c_ctrl  [0:NL-1];
+    reg [15:0] c_poly  [0:NL-1];
+    reg [15:0] c_cinit [0:NL-1];
+    reg [15:0] c_cres  [0:NL-1];
     reg [8:0]  c_start [0:NL-1];
     reg [7:0]  c_div   [0:NL-1];
     reg [15:0] c_ta    [0:NL-1];
@@ -76,6 +79,7 @@ module tt_um_dhruvauppaluri_setl (
     wire [8*NL-1:0] rx_head_v, sr_v, cnt_v;
     wire [3*NL-1:0] tx_level_v, rx_level_v;
     wire [NL-1:0] ta_we, tb_we;
+    wire [16*NL-1:0] crc_v;
     wire [16*NL-1:0] t_wdata_v;
     wire [6:0]  uo_int;
     wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_int, s2};
@@ -92,7 +96,12 @@ module tt_um_dhruvauppaluri_setl (
                 .clk(clk), .rst_n(rst_n),
                 .start(start[i]), .run(run[i]), .slot_me(slot_me),
                 .in_vec(in_vec), .hflag(hflag[i]),
-                .cfg_msb(c_msb[i]), .cfg_start(c_start[i]), .cfg_div(c_div[i]),
+                .cfg_msb(c_ctrl[i][0]), .cfg_ctrl(c_ctrl[i][7:1]),
+                .cfg_poly(c_poly[i]), .cfg_crc_init(c_cinit[i]), .cfg_crc_res(c_cres[i]),
+                .host_crc_we_lo(reg_we && reg_waddr == (8'hA6 + 8 * i)),
+                .host_crc_we_hi(reg_we && reg_waddr == (8'hA7 + 8 * i)),
+                .crc_o(crc_v[16*i +: 16]),
+                .cfg_start(c_start[i]), .cfg_div(c_div[i]),
                 .cfg_ta(c_ta[i]), .cfg_tb(c_tb[i]), .cfg_match(c_match[i]), .cfg_mask(c_mask[i]),
                 .cfg_outinit(c_oinit[i]),
                 .fetch_req(fetch_req[i]), .fetch_addr(fetch_addr_v[9*i +: 9]),
@@ -142,7 +151,8 @@ module tt_um_dhruvauppaluri_setl (
             mode4 <= 1'b0; run <= 4'd0; hflag <= 4'd0; slot <= 2'd0;
             ev <= 4'd0; ovf <= 4'd0;
             for (k = 0; k < NL; k = k + 1) begin
-                c_msb[k] <= 1'b0; c_start[k] <= 9'd0; c_div[k] <= 8'd0;
+                c_ctrl[k] <= 8'd0; c_start[k] <= 9'd0; c_div[k] <= 8'd0;
+                c_poly[k] <= 16'd0; c_cinit[k] <= 16'd0; c_cres[k] <= 16'd0;
                 c_ta[k] <= 16'd0; c_tb[k] <= 16'd0; c_oinit[k] <= 4'hF;
                 c_match[k] <= 8'd0; c_mask[k] <= 8'd0;
             end
@@ -154,7 +164,7 @@ module tt_um_dhruvauppaluri_setl (
             if (reg_we) begin
                 if (reg_waddr < 8'h40) begin
                     case (reg_waddr[3:0])
-                        4'h0: c_msb[reg_waddr[5:4]] <= reg_wdata[0];
+                        4'h0: c_ctrl[reg_waddr[5:4]] <= reg_wdata;
                         4'h1: c_start[reg_waddr[5:4]][7:0] <= reg_wdata;
                         4'h2: c_start[reg_waddr[5:4]][8] <= reg_wdata[0];
                         4'h3: c_div[reg_waddr[5:4]] <= reg_wdata;
@@ -174,6 +184,12 @@ module tt_um_dhruvauppaluri_setl (
                         8'h80: mode4 <= reg_wdata[0];
                         8'h81: run <= reg_wdata[3:0];
                         8'h85: hflag <= reg_wdata[3:0];
+                        8'hA0, 8'hA8, 8'hB0, 8'hB8: c_poly[reg_waddr[4:3]][7:0]   <= reg_wdata;
+                        8'hA1, 8'hA9, 8'hB1, 8'hB9: c_poly[reg_waddr[4:3]][15:8]  <= reg_wdata;
+                        8'hA2, 8'hAA, 8'hB2, 8'hBA: c_cinit[reg_waddr[4:3]][7:0]  <= reg_wdata;
+                        8'hA3, 8'hAB, 8'hB3, 8'hBB: c_cinit[reg_waddr[4:3]][15:8] <= reg_wdata;
+                        8'hA4, 8'hAC, 8'hB4, 8'hBC: c_cres[reg_waddr[4:3]][7:0]   <= reg_wdata;
+                        8'hA5, 8'hAD, 8'hB5, 8'hBD: c_cres[reg_waddr[4:3]][15:8]  <= reg_wdata;
                         8'h88, 8'h89, 8'h8A, 8'h8B: begin
                             if (reg_wdata[6]) ev[reg_waddr[1:0]] <= ev_set[reg_waddr[1:0]];
                             if (reg_wdata[7]) ovf[reg_waddr[1:0]] <= ovf_set[reg_waddr[1:0]];
@@ -197,7 +213,7 @@ module tt_um_dhruvauppaluri_setl (
         reg_rdata = 8'h00;
         if (reg_raddr < 8'h40) begin
             case (reg_raddr[3:0])
-                4'h0: reg_rdata = {7'd0, c_msb[rl]};
+                4'h0: reg_rdata = c_ctrl[rl];
                 4'h1: reg_rdata = c_start[rl][7:0];
                 4'h2: reg_rdata = {7'd0, c_start[rl][8]};
                 4'h3: reg_rdata = c_div[rl];
@@ -225,6 +241,14 @@ module tt_um_dhruvauppaluri_setl (
                 8'h90, 8'h91, 8'h92, 8'h93: reg_rdata = sr_v[8*gl +: 8];
                 8'h94, 8'h95, 8'h96, 8'h97: reg_rdata = cnt_v[8*gl +: 8];
                 8'h98: reg_rdata = {4'd0, pc_v[35], pc_v[26], pc_v[17], pc_v[8]};
+                8'hA0, 8'hA8, 8'hB0, 8'hB8: reg_rdata = c_poly[reg_raddr[4:3]][7:0];
+                8'hA1, 8'hA9, 8'hB1, 8'hB9: reg_rdata = c_poly[reg_raddr[4:3]][15:8];
+                8'hA2, 8'hAA, 8'hB2, 8'hBA: reg_rdata = c_cinit[reg_raddr[4:3]][7:0];
+                8'hA3, 8'hAB, 8'hB3, 8'hBB: reg_rdata = c_cinit[reg_raddr[4:3]][15:8];
+                8'hA4, 8'hAC, 8'hB4, 8'hBC: reg_rdata = c_cres[reg_raddr[4:3]][7:0];
+                8'hA5, 8'hAD, 8'hB5, 8'hBD: reg_rdata = c_cres[reg_raddr[4:3]][15:8];
+                8'hA6, 8'hAE, 8'hB6, 8'hBE: reg_rdata = crc_v[16*reg_raddr[4:3] +: 8];
+                8'hA7, 8'hAF, 8'hB7, 8'hBF: reg_rdata = crc_v[16*reg_raddr[4:3] + 8 +: 8];
                 default: reg_rdata = 8'h00;
             endcase
         end
