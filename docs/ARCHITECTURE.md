@@ -139,7 +139,9 @@ RESIDUE, CRC; little-endian 16-bit; CRC can be read and written).
   on the same bit source. `ones` becomes true when the counter reaches the length (6 for
   USB, 5 for HDLC/CAN).
 * `ld` with IMM[8] set is a special form: `crc lo` (SR ← CRC[7:0]), `crc hi`,
-  `crc clr` (CRC ← INIT) and `ones clr` (after inserting a stuff bit).
+  `crc clr` (CRC ← INIT) and `ones clr` (after inserting a stuff bit); `crc nlo` /
+  `crc nhi` load the *complemented* CRC byte and freeze the CRC until the next `crc clr`
+  (USB, HDLC/PPP).
 
 A reflected CRC shifts its own low byte out to the old high byte, so a transmitter
 appends the CRC with `crc lo` twice. A receiver that passes the CRC bytes through the

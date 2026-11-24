@@ -65,6 +65,7 @@ module setl_lane #(
     reg [15:0] sw;          // stopwatch: lane ticks, saturating
     reg [15:0] crc;
     reg [3:0]  ones;
+    reg        crc_hold;    // set by crc nlo/nhi, cleared by crc clr
     assign crc_o = crc;
 
     assign pc_o  = pc;
@@ -123,8 +124,10 @@ module setl_lane #(
     wire special = ld & f_imm[8];
     wire [7:0] sr0 = do_pop ? tx_head :
                      (ld & ~special) ? f_imm[7:0] :
-                     (special & (f_imm[1:0] == 2'd0)) ? crc[7:0] :
-                     (special & (f_imm[1:0] == 2'd1)) ? crc[15:8] : sr;
+                     (special & (f_imm[2:0] == 3'd0)) ? crc[7:0] :
+                     (special & (f_imm[2:0] == 3'd1)) ? crc[15:8] :
+                     (special & (f_imm[2:0] == 3'd4)) ? ~crc[7:0] :
+                     (special & (f_imm[2:0] == 3'd5)) ? ~crc[15:8] : sr;
     wire outbit = cfg_msb ? sr0[7] : sr0[0];
     wire [7:0] shifted = cfg_msb ? {sr0[6:0], cur} : {cur, sr0[7:1]};
     assign sr_n = (act & f_sh) ? shifted : sr0;
@@ -132,14 +135,16 @@ module setl_lane #(
     // ---- CRC / ones-run assist ----
     wire        crc_b    = cfg_ctrl[2] ? cur : outbit;
     wire        did_sh   = act & f_sh;
-    wire [15:0] crc_pre  = (special & (f_imm[1:0] == 2'd2)) ? cfg_crc_init : crc;
+    wire [15:0] crc_pre  = (special & (f_imm[2:0] == 3'd2)) ? cfg_crc_init : crc;
+    wire        hold_n   = (special & (f_imm[2:0] == 3'd2)) ? 1'b0 :
+                           (special & ((f_imm[2:0] == 3'd4) | (f_imm[2:0] == 3'd5))) ? 1'b1 : crc_hold;
     wire        fb_r     = crc_pre[0] ^ crc_b;
     wire        fb_l     = crc_pre[15] ^ crc_b;
     wire [15:0] crc_upd  = cfg_ctrl[3] ? ({crc_pre[14:0], 1'b0} ^ (fb_l ? cfg_poly : 16'd0))
                                        : ({1'b0, crc_pre[15:1]} ^ (fb_r ? cfg_poly : 16'd0));
-    wire [15:0] crc_n    = (did_sh & cfg_ctrl[1]) ? crc_upd : crc_pre;
+    wire [15:0] crc_n    = (did_sh & cfg_ctrl[1] & ~hold_n) ? crc_upd : crc_pre;
     wire [3:0]  runlen   = cfg_ctrl[7:4];
-    wire [3:0]  ones_pre = (special & (f_imm[1:0] == 2'd3)) ? 4'd0 : ones;
+    wire [3:0]  ones_pre = (special & (f_imm[2:0] == 3'd3)) ? 4'd0 : ones;
     wire [3:0]  ones_n   = (did_sh && runlen != 4'd0) ?
                                (crc_b ? ((ones_pre == 4'd15) ? 4'd15 : ones_pre + 4'd1) : 4'd0) : ones_pre;
     wire c_crcok = (crc_n == cfg_crc_res);
@@ -232,10 +237,12 @@ module setl_lane #(
             pc <= 9'd0; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
             slot_val <= 4'hF; flag <= 1'b0; sw <= 16'd0; crc <= 16'd0; ones <= 4'd0;
+            crc_hold <= 1'b0;
         end else if (start) begin
             pc <= cfg_start; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
             slot_val <= cfg_outinit; flag <= 1'b0; sw <= 16'd0; ones <= 4'd0;
+            crc_hold <= 1'b0;
         end else begin
             if (host_oinit_we & ~run) slot_val <= host_wdata[3:0];
             if (rd_me & pending) begin
@@ -246,7 +253,7 @@ module setl_lane #(
             if (tick) begin
                 sr <= sr_n; cnt <= cnt_n; timer <= timer_n;
                 slot_val <= slot_n; flag <= flag_n; last <= cur; sw <= sw_n;
-                crc <= crc_n; ones <= ones_n;
+                crc <= crc_n; ones <= ones_n; crc_hold <= hold_n;
                 if (w_ok) begin
                     if (refetch) begin
                         first <= 1'b0; valid <= 1'b0; pending <= 1'b1; pc <= nxt;

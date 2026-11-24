@@ -34,6 +34,7 @@ class Lane:
         self.crc_init = 0
         self.crc_res = 0
         self.crc = 0
+        self.crc_hold = 0
         self.ones = 0
         self.start = 0
         self.div = 0
@@ -71,6 +72,7 @@ class Lane:
         self.flag = 0
         self.sw = 0
         self.ones = 0
+        self.crc_hold = 0
 
 
 def cond_value(sel, c):
@@ -336,7 +338,7 @@ class Chip:
         push_ok = push_req and len(L.rx.q) < Fifo.DEPTH
         ld = act and f["fifo"] == isa.FIFO_LDI
         special = ld and (f["imm"] >> 8) & 1
-        sp = f["imm"] & 3
+        sp = f["imm"] & 7
         if pop:
             sr0 = L.tx.q[0]
         elif ld and not special:
@@ -345,6 +347,10 @@ class Chip:
             sr0 = L.crc & 0xFF
         elif special and sp == 1:
             sr0 = L.crc >> 8
+        elif special and sp == 4:
+            sr0 = ~L.crc & 0xFF
+        elif special and sp == 5:
+            sr0 = (~L.crc >> 8) & 0xFF
         else:
             sr0 = L.sr
         outbit = (sr0 >> 7) & 1 if L.msb else sr0 & 1
@@ -358,7 +364,8 @@ class Chip:
         did_shift = act and f["sh"]
         b = cur if L.ctrl & isa.CTRL_CRC_IN else outbit
         crc_n = L.crc_init if (special and sp == 2) else L.crc
-        if did_shift and L.ctrl & isa.CTRL_CRC:
+        hold_n = 0 if (special and sp == 2) else (1 if (special and sp in (4, 5)) else L.crc_hold)
+        if did_shift and L.ctrl & isa.CTRL_CRC and not hold_n:
             if L.ctrl & isa.CTRL_CRC_LEFT:
                 fb = ((crc_n >> 15) & 1) ^ b
                 crc_n = ((crc_n << 1) & 0xFFFF) ^ (L.poly if fb else 0)
@@ -440,7 +447,7 @@ class Chip:
             u["_tb"] = (L.sw + (L.sw >> 1)) & 0xFFFF
 
         u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur, sw=sw_n,
-                 crc=crc_n, ones=ones_n)
+                 crc=crc_n, ones=ones_n, crc_hold=hold_n)
         if pop:
             u["_pop"] = True
         if push_req and not push_ok:

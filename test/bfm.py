@@ -349,3 +349,75 @@ async def ws2812_decode(h, pin, nbits, threshold, timeout=400000):
             hi = 0
         prev = v
     return bits, widths
+
+
+def usb_crc16(data):
+    c = 0xFFFF
+    for b in data:
+        c ^= b
+        for _ in range(8):
+            c = (c >> 1) ^ (0xA001 if c & 1 else 0)
+    return c ^ 0xFFFF            # USB sends the complement
+
+
+async def usb_ls_capture(h, dp, dm, period, timeout=500000):
+    """Record one low-speed packet (J idle -> SOP ... EOP -> J) and decode it.
+    Returns (packet bytes after SYNC, list of problems)."""
+    clk = h.dut.clk
+    trace = []
+    n = 0
+    state = "idle"
+    while True:
+        await RisingEdge(clk)
+        n += 1
+        assert n < timeout, "USB capture timeout"
+        uo = int(h.dut.uo_out.value)
+        v = ((uo >> dp) & 1, (uo >> dm) & 1)
+        if state == "idle":
+            if v == (1, 0):                     # J -> K: start of packet
+                state = "pkt"
+                trace = [v]
+        else:
+            trace.append(v)
+            if state == "pkt" and v == (0, 0):
+                state = "eop"
+                se0 = len(trace) - 1
+            elif state == "eop" and v == (0, 1):
+                j_at = len(trace) - 1
+                for _ in range(period):          # J must hold for one bit
+                    await RisingEdge(clk)
+                    uo = int(h.dut.uo_out.value)
+                    trace.append(((uo >> dp) & 1, (uo >> dm) & 1))
+                break
+    problems = []
+    # every transition before EOP falls on a bit boundary
+    for i in range(1, se0 + 1):
+        if trace[i] != trace[i - 1] and i % period:
+            problems.append(f"transition at {i} clocks is off the bit grid ({period})")
+    if se0 % period:
+        problems.append(f"SE0 starts off the bit grid at {se0}")
+    if abs((j_at - se0) - 2 * period) > 2:
+        problems.append(f"SE0 lasted {j_at - se0} clocks, expected {2 * period}")
+    if any(trace[j] != (0, 1) for j in range(j_at, j_at + period)):
+        problems.append("J after SE0 did not hold for one bit")
+    # NRZI decode and un-stuff
+    nbits = se0 // period
+    prev = (0, 1)                                # J before SOP
+    bits, ones = [], 0
+    for k in range(nbits):
+        s = trace[k * period + period // 2]
+        b = 1 if s == prev else 0
+        prev = s
+        if ones == 6:
+            if b != 0:
+                problems.append(f"missing stuff bit at bit {k}")
+            ones = 0
+            continue
+        ones = ones + 1 if b else 0
+        bits.append(b)
+    if len(bits) % 8:
+        problems.append(f"{len(bits)} data bits is not whole bytes")
+    by = [sum(bits[i + j] << j for j in range(8)) for i in range(0, len(bits) - 7, 8)]
+    if not by or by[0] != 0x80:
+        problems.append(f"bad SYNC {by[:1]}")
+    return by[1:], problems

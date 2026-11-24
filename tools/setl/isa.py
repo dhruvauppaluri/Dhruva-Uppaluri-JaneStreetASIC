@@ -112,6 +112,9 @@ G_CRC = 0xA0         # +8*lane: POLY lo/hi, INIT lo/hi, RES lo/hi, CRC lo/hi (CR
 
 # `ld` with IMM[8] set is a special form (the SR load from IMM[7:0] is replaced):
 LD_CRC_LO, LD_CRC_HI, LD_CRC_CLR, LD_ONES_CLR = 0x100, 0x101, 0x102, 0x103
+# inverted CRC bytes for protocols that send the complement (USB, HDLC/PPP); they
+# also freeze the CRC register until the next `crc clr`, so sending it is harmless
+LD_CRC_NLO, LD_CRC_NHI = 0x104, 0x105
 
 CHIP_ID = 0x5E
 CHIP_VERSION = 0x01

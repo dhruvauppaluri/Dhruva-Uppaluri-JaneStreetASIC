@@ -7,8 +7,8 @@
 | Architecture | 64-bit state records; 4 lanes on a deterministic 2/4-way barrel; registered-read memory contract matching the IHP macro; pin router with open-drain and invert; stopwatch; CRC/LFSR and ones-run assist |
 | Executable spec | `tools/setl/model.py`, cycle-accurate |
 | Toolchain | assembler (images, `$readmemh`, Verilog ROMs), host driver, learning and impersonation (`learn.py`), JTAG helper |
-| Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC |
-| Directed tests | 15 (RTL, 512-word memory) / 14 on the IHP SRAM macro models / 13 + 1 skip on the 64-word fallback memory, all with the golden model in lockstep |
+| Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX (generated) |
+| Directed tests | 16 (RTL, 512-word memory) / 13 + 2 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
 | Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
 | Formal | bounded proofs of the UART / SPI / I²C programs on the lane RTL plus reachability checks; also in CI |
 | Lint | Verilator `-Wall` clean |
@@ -38,8 +38,7 @@ fallback, and spend its spare area on more memory words.
 
 1. Get both GDS builds green; record area, timing (slack at 50 MHz) and precheck.
 2. Run gate-level simulation of the directed tests (the GL job in the GDS workflow).
-3. USB low-speed program (TX first): NRZI via line-state tracking, CRC-16 sent
-   inverted, stuffing from the `ones` condition.
+3. USB low-speed receive: clock recovery (DPLL) from transitions.
 4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
 5. Bring-up kit for the RP2350: a MicroPython transport for `setl.host`.
 
