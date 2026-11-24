@@ -1,0 +1,19 @@
+; MODBUS RTU (or any UART framing with a CRC-16) transmitter, 8N1, LSB first.
+; CTRL = CTRL_CRC (CRC fed by the transmitted bits).  CRC: poly 0xA001 (reflected
+; 0x8005), init 0xFFFF.  The host pushes the frame's bytes; when the FIFO runs
+; dry the lane appends the CRC (low byte first) and the frame is done.
+; Sending the CRC's own low byte through a reflected CRC shifts the old high byte
+; down, so "crc lo" twice sends both bytes, and the register ends at 0.
+.lane modbus_tx
+m_idle:   crc clr wait txready                            goto m_start
+m_start:  pop set 0=0 cnt=8 timer=TA wait timer           goto m_bit
+m_bit:    out 0 shift dec timer=TA wait timer             if cnt0 goto m_stop else m_bit
+m_stop:   set 0=1 timer=TA wait timer                     if txready goto m_start else m_crc1
+m_crc1:   crc lo                                          goto a_start
+a_start:  set 0=0 cnt=8 timer=TA wait timer               goto a_bit
+a_bit:    out 0 shift dec timer=TA wait timer             if cnt0 goto a_stop else a_bit
+a_stop:   set 0=1 timer=TA wait timer                     goto m_crc2
+m_crc2:   crc lo                                          goto b_start
+b_start:  set 0=0 cnt=8 timer=TA wait timer               goto b_bit
+b_bit:    out 0 shift dec timer=TA wait timer             if cnt0 goto b_stop else b_bit
+b_stop:   set 0=1 timer=TA wait timer                     goto m_idle

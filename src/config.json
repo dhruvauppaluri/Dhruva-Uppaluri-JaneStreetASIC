@@ -55,6 +55,7 @@
         "mem.g_sram[0].sram": {"location": [3.36, 3.78], "orientation": "FS"},
         "mem.g_sram[1].sram": {"location": [3.36, 340.2], "orientation": "N"}
       },
+      "vh": ["dir::RM_IHPSG13_1P_512x32_c2_bm_bist.bb.v"],
       "gds": ["pdk_dir::libs.ref/sg13cmos5l_sram/gds/RM_IHPSG13_1P_512x32_c2_bm_bist.gds"],
       "lef": ["pdk_dir::libs.ref/sg13cmos5l_sram/lef/RM_IHPSG13_1P_512x32_c2_bm_bist.lef"],
       "spice": ["pdk_dir::libs.ref/sg13cmos5l_sram/cdl/RM_IHPSG13_1P_512x32_c2_bm_bist.cdl"],
