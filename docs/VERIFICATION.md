@@ -36,6 +36,7 @@ protocols from their specifications:
 | `test_ws2812` | LED bit stream decoded by pulse width; exact high times |
 | `test_ps2_rx` | PS/2 keyboard frames (start, data, odd parity, stop) clocked by the device |
 | `test_jtag_idcode` | JTAG adapter against a full 16-state TAP model: reset, walk to Shift-DR, read a 32-bit IDCODE, return to Run-Test/Idle with the exact TCK count |
+| `test_learn_and_impersonate` | **learn, then impersonate**. An MCU model talks to a sensor model at real 100 kHz timing while lane 0 sniffs the bus. The host learns a register-device model from the capture. The sensor is unplugged, the chip is reprogrammed as a host-served target, and the MCU repeats its traffic and gets identical answers. The target stretches SCL while the host prepares each reply. |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are

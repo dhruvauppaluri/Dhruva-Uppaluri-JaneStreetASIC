@@ -349,3 +349,107 @@ async def test_jtag_idcode(dut):
     assert idcode == 0x4BA00477, hex(idcode)
     assert tap.state == "RTI"
     h.check()
+
+
+async def mcu_session(c):
+    """What a microcontroller typically does with an I2C sensor/EEPROM at 0x50."""
+    A = 0x50
+    out = []
+
+    async def set_ptr(p):
+        await c.start()
+        assert await c.write(A << 1)
+        assert await c.write(p)
+
+    async def read(n):
+        await c.restart()
+        assert await c.write((A << 1) | 1)
+        r = [await c.read(i < n - 1) for i in range(n)]
+        await c.stop()
+        return r
+
+    await set_ptr(0x00)
+    out.append(await read(4))           # measurement registers
+    await set_ptr(0x0F)
+    out.append(await read(1))           # WHO_AM_I
+    await c.start()                     # configure: two bytes at 0x10
+    assert await c.write(A << 1)
+    for b in (0x10, 0x5A, 0x5B):
+        assert await c.write(b)
+    await c.stop()
+    await set_ptr(0x10)
+    out.append(await read(2))           # read the configuration back
+    return out
+
+
+@cocotb.test()
+async def test_learn_and_impersonate(dut):
+    """Sniff an MCU talking to a sensor, learn the sensor on the host, unplug it,
+    and let SETL impersonate it: the MCU sees the same answers."""
+    from setl import learn
+    h, host = await setup(dut)
+    # 100 kHz I2C at a 60 MHz clock (300-clock half period), as on the real board
+    mcu = bfm.I2cController(h, scl=0, sda=1, half=300, who="mcu")
+
+    # ---- phase A: real sensor on the bus, SETL listens ----
+    sensor = bfm.I2cTarget(h, scl=0, sda=1, addr=0x50, who="sensor")
+    sensor.mem[0:4] = bytes([0x12, 0x34, 0x56, 0x78])
+    sensor.mem[0x0F] = 0x33
+    sensor_task = cocotb.start_soon(sensor.run())
+    img, sym, _ = prog("i2c_sniff.setl")
+    await host.load_image(img)
+    await host.config_lane(0, start=sym["i2c_sniff"], msb=True)
+    await host.run(1)
+    capture = []
+    sniffing = True
+
+    async def drain():
+        while sniffing:
+            n = (await host.status(0))["rx"]
+            if n:
+                capture.extend(await host.pop(0, n))
+    drainer = cocotb.start_soon(drain())
+    real = await mcu_session(mcu)
+    await ClockCycles(dut.clk, 2000)
+    sniffing = False
+    await drainer
+    n = (await host.status(0))["rx"]
+    capture.extend(await host.pop(0, n))
+    assert (await host.status(0))["ovf"] == 0, "capture overflowed"
+    dev, report = learn.learn(capture)
+    dut._log.info(f"learned: {report}")
+    assert report["address"] == 0x50
+    assert {k: report["registers"][k] for k in (0, 1, 2, 3, 0x0F, 0x10, 0x11)} == \
+        {0: 0x12, 1: 0x34, 2: 0x56, 3: 0x78, 0x0F: 0x33, 0x10: 0x5A, 0x11: 0x5B}
+
+    # ---- phase B: sensor unplugged, SETL reprogrammed to impersonate it ----
+    sensor_task.cancel()
+    h.release("sensor")
+    await host.run(0)
+    img, sym, _ = prog("i2c_target_host.setl")
+    await host.load_image(img)
+    await host.config_lane(0, start=sym["i2c_target_host"], msb=True,
+                           outmap=[("uio1", "od"), ("uio0", "od")], match=0x50 << 1, mask=0xFE)
+    await host.run(1)
+    imp = learn.Impersonator(dev)
+    serving = True
+    pending = []
+
+    async def serve():
+        while serving:
+            n = (await host.status(0))["rx"]
+            if n:
+                pending.extend(await host.pop(0, n))
+                k = len(pending) & ~1
+                replies = imp.handle(pending[:k])
+                del pending[:k]
+                if replies:
+                    await host.push(0, replies)
+    server = cocotb.start_soon(serve())
+    fake = await mcu_session(mcu)
+    serving = False
+    await server
+    assert fake == real, (fake, real)
+    assert mcu.stretched > 0, "the target never needed to stretch"
+    dut._log.info(f"impersonation: {fake}; SCL stretched for {mcu.stretched} clocks")
+    h.check()

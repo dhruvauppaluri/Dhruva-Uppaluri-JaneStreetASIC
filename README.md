@@ -17,6 +17,11 @@ per lane tick and no stalls.
 | Example programs | `programs/`: UART TX/RX and auto-baud RX, SPI controller (modes 0–3) and target, I²C controller and target, JTAG, PS/2, WS2812 |
 | Formal proofs | `formal/` (programs proven on the lane RTL) |
 
+**What it can do that a fixed-function chip can't:** learn an unknown device's baud rate
+on chip; sniff an I²C bus, learn the device on the host and then **impersonate it**
+after it is unplugged; be an I²C controller and target at once; and run any protocol
+that fits the state-record model, all after fabrication.
+
 ```
 cd test && make                       # directed protocol tests + lockstep golden model
 make COCOTB_TEST_MODULES=test_random  # constrained-random co-simulation

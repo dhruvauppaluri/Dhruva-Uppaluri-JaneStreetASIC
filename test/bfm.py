@@ -93,8 +93,9 @@ class SpiTarget:
 class I2cTarget:
     """Byte-addressed EEPROM-style I2C target (write: [ptr, data...]; read from ptr)."""
 
-    def __init__(self, h, scl, sda, addr=0x50, size=256, stretch=0):
+    def __init__(self, h, scl, sda, addr=0x50, size=256, stretch=0, who=None):
         self.h, self.scl, self.sda, self.addr = h, scl, sda, addr
+        self.who = who
         self.mem = bytearray(size)
         self.stretch = stretch
         self.log = []
@@ -116,7 +117,7 @@ class I2cTarget:
             if stretch_left:
                 stretch_left -= 1
                 if stretch_left == 0:
-                    h.set_ext(self.scl, 1)
+                    h.set_ext(self.scl, who=self.who, val= 1)
             if prev_scl and scl and prev_sda != sda:
                 if sda == 0:
                     st, sh, bitn, first, have_ptr = "rx", 0, 0, True, False
@@ -124,7 +125,7 @@ class I2cTarget:
                 else:
                     st = "idle"
                     self.log.append("P")
-                h.set_ext(self.sda, 1)
+                h.set_ext(self.sda, who=self.who, val= 1)
             elif not prev_scl and scl:
                 if st == "rx":
                     sh = ((sh << 1) | sda) & 0xFF
@@ -148,29 +149,29 @@ class I2cTarget:
                         ptr += 1
                         self.log.append(("W", sh))
                     if ack:
-                        h.set_ext(self.sda, 0)
+                        h.set_ext(self.sda, who=self.who, val= 0)
                         st = "ack"
                     else:
                         st = "idle"
                 elif st == "ack":
                     if self.stretch:
-                        h.set_ext(self.scl, 0)
+                        h.set_ext(self.scl, who=self.who, val= 0)
                         stretch_left = self.stretch
                     if reading:
                         cur = self.mem[ptr % len(self.mem)]
                         ptr += 1
                         self.log.append(("R", cur))
                         st, bitn = "tx", 0
-                        h.set_ext(self.sda, cur >> 7)
+                        h.set_ext(self.sda, who=self.who, val= cur >> 7)
                     else:
-                        h.set_ext(self.sda, 1)
+                        h.set_ext(self.sda, who=self.who, val= 1)
                         st, sh, bitn = "rx", 0, 0
                 elif st == "tx":
                     bitn += 1
                     if bitn < 8:
-                        h.set_ext(self.sda, (cur >> (7 - bitn)) & 1)
+                        h.set_ext(self.sda, who=self.who, val= (cur >> (7 - bitn)) & 1)
                     else:
-                        h.set_ext(self.sda, 1)
+                        h.set_ext(self.sda, who=self.who, val= 1)
                         st = "txack"
                 elif st == "txack":
                     if host_ack:
@@ -178,7 +179,7 @@ class I2cTarget:
                         ptr += 1
                         self.log.append(("R", cur))
                         st, bitn = "tx", 0
-                        h.set_ext(self.sda, cur >> 7)
+                        h.set_ext(self.sda, who=self.who, val= cur >> 7)
                     else:
                         st = "idle"
             prev_scl, prev_sda = scl, sda
@@ -187,66 +188,72 @@ class I2cTarget:
 class I2cController:
     """Bit-banged open-drain I2C controller driving the uio bus (ext bits)."""
 
-    def __init__(self, h, scl, sda, half):
+    def __init__(self, h, scl, sda, half, who=None):
         self.h, self.scl, self.sda, self.half = h, scl, sda, half
+        self.who = who
+        self.stretched = 0      # clocks a target held SCL low
 
     async def _w(self):
         await ClockCycles(self.h.dut.clk, self.half)
 
     async def start(self):
         h = self.h
-        h.set_ext(self.sda, 1)
-        h.set_ext(self.scl, 1)
+        h.set_ext(self.sda, who=self.who, val=1)
+        h.set_ext(self.scl, who=self.who, val=1)
         await self._w()
-        h.set_ext(self.sda, 0)
+        h.set_ext(self.sda, who=self.who, val=0)
         await self._w()
-        h.set_ext(self.scl, 0)
+        h.set_ext(self.scl, who=self.who, val=0)
         await self._w()
 
     async def restart(self):
         h = self.h
-        h.set_ext(self.sda, 1)
+        h.set_ext(self.sda, who=self.who, val=1)
         await self._w()
         await self.start()
 
     async def stop(self):
         h = self.h
-        h.set_ext(self.sda, 0)
+        h.set_ext(self.sda, who=self.who, val=0)
         await self._w()
-        h.set_ext(self.scl, 1)
+        h.set_ext(self.scl, who=self.who, val=1)
         await self._w()
-        h.set_ext(self.sda, 1)
+        h.set_ext(self.sda, who=self.who, val=1)
         await self._w()
 
     async def _clock(self):
         """One SCL pulse; returns SDA sampled while SCL is high."""
         h = self.h
-        h.set_ext(self.scl, 1)
+        h.set_ext(self.scl, who=self.who, val=1)
+        await ClockCycles(h.dut.clk, 4)
+        while not h.uio_level(self.scl):      # honour clock stretching
+            await ClockCycles(h.dut.clk, 1)
+            self.stretched += 1
         await self._w()
         v = h.uio_level(self.sda)
-        h.set_ext(self.scl, 0)
+        h.set_ext(self.scl, who=self.who, val=0)
         await self._w()
         return v
 
     async def write(self, b):
         for i in range(7, -1, -1):
-            self.h.set_ext(self.sda, (b >> i) & 1)
+            self.h.set_ext(self.sda, who=self.who, val=(b >> i) & 1)
             await self._w()
             await self._clock()
-        self.h.set_ext(self.sda, 1)
+        self.h.set_ext(self.sda, who=self.who, val=1)
         await self._w()
         return (await self._clock()) == 0   # True = ACK
 
     async def read(self, ack):
-        self.h.set_ext(self.sda, 1)
+        self.h.set_ext(self.sda, who=self.who, val=1)
         v = 0
         for _ in range(8):
             await self._w()
             v = (v << 1) | await self._clock()
-        self.h.set_ext(self.sda, 0 if ack else 1)
+        self.h.set_ext(self.sda, who=self.who, val=0 if ack else 1)
         await self._w()
         await self._clock()
-        self.h.set_ext(self.sda, 1)
+        self.h.set_ext(self.sda, who=self.who, val=1)
         return v
 
 

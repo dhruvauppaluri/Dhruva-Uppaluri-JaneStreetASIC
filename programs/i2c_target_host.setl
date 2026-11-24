@@ -1,0 +1,62 @@
+; Host-served I2C target, MSB first (CTRL msb=1).  slot 0 = SDA, slot 1 = SCL (both open-drain).
+; MATCH = address << 1, MASK = 0xFE.  The host implements the device; this lane
+; does the bus.  Events pushed to RX as (value, tag) pairs:
+;   (0, 'S') a write to us begins     (b, 'W') byte b written
+;   (0, 'R') the controller wants a read byte: push it to TX
+; While it waits for a read byte the target stretches SCL, so the reply is never
+; stale and the host may be slow.  Used by the learn-and-impersonate demo.
+.pin scl uio0
+.pin sda uio1
+.lane i2c_target_host
+g_idle:   set 0=1 1=1 in sda wait pin                     goto g_wfall
+g_wfall:  in sda wait fall                                goto g_chk
+g_chk:    in scl                                          if pin goto g_start else g_idle
+g_start:  set 0=1 cnt=7 in scl wait !pin                  goto ab_bit
+ab_bit:   in scl wait pin                                 goto ab_samp
+ab_samp:  in sda shift dec                                if pin goto ab_h1 else ab_h0
+ab_h1:    in scl                                          if !pin goto ab_low else ab_h1s
+ab_h1s:   in sda                                          if !pin goto g_start else ab_h1
+ab_h0:    in scl                                          if !pin goto ab_low else ab_h0s
+ab_h0s:   in sda                                          if pin goto g_idle else ab_h0
+ab_low:                                                   if cnt0 goto rw_bit else ab_bit
+rw_bit:   in scl wait pin                                 goto rw_samp
+rw_samp:  in sda shift                                    if pin goto rw_r else rw_w
+rw_r:     in scl wait !pin                                if match goto rack else g_idle
+rw_w:     in scl wait !pin                                if match goto ws1 else g_idle
+; ---- write: report (0,'S'), ACK, then (b,'W') per byte ----
+ws1:      ld 0                                            goto ws2
+ws2:      push                                            goto ws3
+ws3:      ld 0x53                                         goto ws4
+ws4:      push                                            goto wack
+wack:     set 0=0                                         goto wk_hi
+wk_hi:    in scl wait pin                                 goto wk_lo
+wk_lo:    in scl wait !pin                                goto wk_rel
+wk_rel:   set 0=1 cnt=8                                   goto d_bit
+d_bit:    in scl wait pin                                 goto d_samp
+d_samp:   in sda shift dec                                if pin goto d_h1 else d_h0
+d_h1:     in scl                                          if !pin goto d_low else d_h1s
+d_h1s:    in sda                                          if !pin goto g_start else d_h1
+d_h0:     in scl                                          if !pin goto d_low else d_h0s
+d_h0s:    in sda                                          if pin goto g_idle else d_h0
+d_low:                                                    if cnt0 goto d_got else d_bit
+d_got:    push                                            goto d_t1
+d_t1:     ld 0x57                                         goto d_t2
+d_t2:     push                                            goto wack
+; ---- read: ACK, then per byte stretch SCL, request it, wait for the host ----
+rack:     set 0=0                                         goto rk_hi
+rk_hi:    in scl wait pin                                 goto rk_lo
+rk_lo:    in scl wait !pin                                goto r_req
+r_req:    set 0=1 1=0 ld 0                                goto r_q2        ; hold SCL low
+r_q2:     push                                            goto r_q3
+r_q3:     ld 0x52                                         goto r_q4
+r_q4:     push wait txready                               goto t_load
+t_load:   pop cnt=8 out 0                                 goto t_rel
+t_rel:    set 1=1                                         goto t_hi        ; release SCL
+t_hi:     in scl wait pin                                 goto t_lo
+t_lo:     in scl wait !pin                                goto t_next
+t_next:   shift dec                                       if cnt0 goto t_ack else t_out
+t_out:    out 0                                           goto t_hi
+t_ack:    set 0=1                                         goto ma_hi
+ma_hi:    in scl wait pin                                 goto ma_samp
+ma_samp:  in sda                                          if pin goto g_idle else ma_lo
+ma_lo:    in scl wait !pin                                goto r_req

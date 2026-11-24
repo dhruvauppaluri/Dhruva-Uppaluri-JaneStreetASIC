@@ -14,6 +14,9 @@
   **SPI target**, **I²C target**, **JTAG adapter**, **PS/2 receiver**, **WS2812 driver**,
   and a **UART receiver that learns its baud rate on chip** (stopwatch → TA/TB).
   I²C controller and target run on one chip at the same time.
+* **Learn, then impersonate**: an I²C bus sniffer program, host-side model learning
+  (`tools/setl/learn.py`), and a host-served I²C target that stretches SCL while the host
+  answers. Demonstrated end to end in `test_learn_and_impersonate`.
 * **Verification**: 12 directed tests, bounded formal proofs of the UART/SPI/I²C programs on the RTL, against independent protocol models, all passing with
   the golden model in lockstep on RTL with both memory builds. Constrained-random
   co-simulation: 16 seeds, about 840k cycles, zero mismatches.

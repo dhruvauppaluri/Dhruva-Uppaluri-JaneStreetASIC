@@ -1,0 +1,33 @@
+; Passive I2C bus capture (never drives the bus), MSB first (CTRL msb=1).
+; Every event is pushed to RX as a (value, tag) byte pair:
+;   (0, 'S') START or repeated START     (0, 'P') STOP
+;   (b, 'A') byte b, acknowledged         (b, 'N') byte b, not acknowledged
+; setl.learn turns the stream into transactions and a device model.
+.pin scl uio0
+.pin sda uio1
+.lane i2c_sniff
+s_idle:   in sda wait pin                                 goto s_wf
+s_wf:     in sda wait fall                                goto s_chk
+s_chk:    in scl                                          if pin goto s_start else s_idle
+s_start:  ld 0                                            goto s_st1
+s_st1:    push                                            goto s_st2
+s_st2:    ld 0x53                                         goto s_st3
+s_st3:    push                                            goto s_byte
+s_byte:   cnt=8 in scl wait !pin                          goto b_bit
+b_bit:    in scl wait pin                                 goto b_samp
+b_samp:   in sda shift dec                                if pin goto b_h1 else b_h0
+b_h1:     in scl                                          if !pin goto b_low else b_h1s
+b_h1s:    in sda                                          if !pin goto s_start else b_h1
+b_h0:     in scl                                          if !pin goto b_low else b_h0s
+b_h0s:    in sda                                          if pin goto s_stop else b_h0
+b_low:                                                    if cnt0 goto k_bit else b_bit
+k_bit:    push in scl wait pin                            goto k_samp      ; the byte
+k_samp:   in sda                                          if pin goto k_n else k_a
+k_a:      ld 0x41                                         goto k_tag
+k_n:      ld 0x4E                                         goto k_tag
+k_tag:    push in scl wait !pin                           goto b_rearm
+b_rearm:  cnt=8                                           goto b_bit
+s_stop:   ld 0                                            goto s_sp1
+s_sp1:    push                                            goto s_sp2
+s_sp2:    ld 0x50                                         goto s_sp3
+s_sp3:    push                                            goto s_idle

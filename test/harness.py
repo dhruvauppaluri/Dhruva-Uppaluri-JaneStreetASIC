@@ -29,6 +29,7 @@ class Harness:
         self.ui = 0          # lane-side ui bits [4:0] (and anything else a BFM sets)
         self.host_bits = 0x20  # ui[7]=SCK ui[6]=MOSI ui[5]=CSn (idle high)
         self.ext = 0xFF      # external drive on uio (1 = released/high)
+        self.agents = {}     # extra open-drain drivers on the uio bus: name -> byte
         self.cosim = (not GATES) if cosim is None else (cosim and not GATES)
         self.model = model.Chip() if self.cosim else None
         self.mismatches = 0
@@ -71,7 +72,10 @@ class Harness:
             self.uio_out = int(str(d.uio_out.value).lower().replace("x", "0"), 2)
             self.uio_oe = int(d.uio_oe.value)
             chip = (self.uio_out | ~self.uio_oe) & 0xFF
-            uio_in = chip & self.ext
+            ext = self.ext
+            for a in self.agents.values():
+                ext &= a
+            uio_in = chip & ext
             ui = (self.ui & 0x1F) | (self.host_bits & 0xE0)
             self.uio_in = uio_in
             d.uio_in.value = uio_in
@@ -146,8 +150,16 @@ class Harness:
     def set_ui(self, bit, val):
         self.ui = (self.ui & ~(1 << bit)) | ((val & 1) << bit)
 
-    def set_ext(self, bit, val):
-        self.ext = (self.ext & ~(1 << bit)) | ((val & 1) << bit)
+    def set_ext(self, bit, val, who=None):
+        """Drive (0) or release (1) a uio bit; `who` names a separate open-drain agent."""
+        if who is None:
+            self.ext = (self.ext & ~(1 << bit)) | ((val & 1) << bit)
+        else:
+            cur = self.agents.get(who, 0xFF)
+            self.agents[who] = (cur & ~(1 << bit)) | ((val & 1) << bit)
+
+    def release(self, who):
+        self.agents.pop(who, None)
 
     def uio_level(self, bit):
         return (self.uio_in >> bit) & 1
