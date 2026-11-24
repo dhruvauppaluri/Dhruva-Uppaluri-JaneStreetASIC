@@ -11,6 +11,7 @@ per lane tick and no stalls.
 | | |
 |-|-|
 | Architecture and ISA | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Tutorial: add a protocol in 15 minutes | [docs/TUTORIAL.md](docs/TUTORIAL.md) |
 | Verification | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 | **Write-up (start here)** | [docs/WRITEUP.md](docs/WRITEUP.md) |
 | Status and plan | [docs/STATUS.md](docs/STATUS.md) |

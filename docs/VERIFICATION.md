@@ -42,6 +42,7 @@ protocols from their specifications:
 | `test_usb_ls_loopback` | USB LS TX lane → RX lane through the on-chip readback: clock recovery, NRZI, un-stuffing, CRC check; data packets and a handshake (512-word memory only) |
 | `test_can_tx` | CAN 2.0A frames at 500 kbit/s against a real-time receiver that de-stuffs, checks the bit grid and the CRC-15, and drives the ACK slot; stuffing in the ID and data fields; a frame with no ACK raises the host event (512-word memory only) |
 | `test_swd_read_dpidr` | SWD against a debug-port model: line reset, JTAG-to-SWD switch, DPIDR read with ACK=OK, data and parity |
+| `test_manchester` | the tutorial's protocol: Manchester line coding decoded independently, with every edge on the half-bit grid |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are

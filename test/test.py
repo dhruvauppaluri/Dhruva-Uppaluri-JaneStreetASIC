@@ -6,7 +6,7 @@ every cycle.  These tests also run on the gate-level netlist (GATES=yes).
 import os
 
 import cocotb
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, RisingEdge
 
 from harness import Harness, AHost
 import bfm
@@ -670,4 +670,41 @@ async def test_swd_read_dpidr(dut):
     assert ack == 0b001, f"ACK {ack:03b}"
     assert data == 0x2BA01477, hex(data)
     assert parity == bin(data).count("1") & 1
+    h.check()
+
+
+@cocotb.test()
+async def test_manchester(dut):
+    """The tutorial's protocol (docs/TUTORIAL.md): Manchester line coding, checked
+    by a decoder that also requires every edge on the half-bit grid."""
+    h, host = await setup(dut)
+    img, sym, _ = prog("manchester_tx.setl")
+    await host.load_image(img)
+    TA = 7                                        # half bit = 8 ticks = 16 clocks
+    await host.config_lane(0, start=sym["manchester_tx"], ta=TA, tb=TA - 3, msb=True,
+                           outmap=["uo0"], outinit=0)
+    data = [0xA5, 0x00, 0xFF]
+    await host.push(0, data)
+    half = 2 * (TA + 1)
+    trace = []
+    await host.run(1)
+    for _ in range(half * 2 * 8 * len(data) + 400):
+        await RisingEdge(dut.clk)
+        trace.append((int(dut.uo_out.value) >> 0) & 1)
+    # the first bit starts at the first sample where the line leaves idle-low or,
+    # for a leading 1 (low first half), half a bit before the first rise
+    first_rise = trace.index(1)
+    start = first_rise - half if data[0] & 0x80 else first_rise
+    bits = []
+    for k in range(8 * len(data)):
+        a = trace[start + 2 * k * half + half // 2]
+        b = trace[start + 2 * k * half + half + half // 2]
+        assert a != b, f"bit {k}: no mid-bit transition"
+        bits.append(1 if (a, b) == (0, 1) else 0)
+        for j in range(1, 2 * half):            # no edges except on the half-bit grid
+            i = start + 2 * k * half + j
+            if j != half and j != 2 * half:
+                assert trace[i] == trace[i - 1] or j % half == 0, f"bit {k}: edge off grid"
+    got = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    assert got == data, [hex(x) for x in got]
     h.check()
