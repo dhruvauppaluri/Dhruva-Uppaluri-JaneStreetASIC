@@ -54,8 +54,11 @@ more than five hours in CI and was stopped once the SRAM build was green.
 
 ## Next
 
-1. Tighten the clock again (30 ns now; 48–60 MHz is needed for exact USB low-speed
-   rates), now that routing is clean at 45 % density.
+1. Faster clock. A 48 MHz trial (branch `setl-sram-48mhz`, run 45428121332) was clean
+   for routing DRC, LVS and hold, and failed only on setup at the slow corner
+   (1.08 V, 125 °C). The submitted build therefore signs off at 33 MHz. Exact USB
+   low-speed timing (48 or 60 MHz) needs the critical path shortened first, for example
+   by registering the output readback into the input vector.
 3. USB: test the receiver against a USB LS decoder-driven stimulus with jitter and frequency offset.
 4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
 5. Bring-up on the demo board: `tools/setl/rp2350.py` (MicroPython transport) is written

@@ -166,6 +166,8 @@ Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
   packet level exists: the host does the transactions.
 * The formal proofs are bounded (several full transactions from reset). Unbounded
   proofs need inductive invariants.
+* The submitted build signs off at 33 MHz. A 48 MHz trial misses setup only at the slow
+  corner, so exact USB low-speed rates (48/60 MHz) are not signed off.
 * No silicon exists yet. Pad timing and the CMOS5L SRAM power scheme are unproven on
   this process. That is why a fallback build exists.
 
