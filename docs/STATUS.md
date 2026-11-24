@@ -27,17 +27,35 @@ Issues found and fixed in CI so far:
   could not place it (GRT-0010). Fixed with `EXTRA_EXCLUDED_CELLS`.
 * The SRAM build's lint step could not see the macro (MODMISSING). Fixed with a `vh`
   blackbox view.
+* SRAM build, first full run: placement, routing and **LVS completed clean**, which
+  verifies the SRAM power hookup through `ExtendPowerStripes`. Two things failed: Magic
+  DRC (230k errors, from the SRAM macro's internals) and 8 setup endpoints at the slow
+  corner (1.08 V, 125 °C) at 50 MHz. Fixed as in Pettit's flow: KLayout DRC with the
+  CMOS5L deck instead of Magic, post-global-route timing repair with a 0.25 ns margin,
+  and a 22 ns clock (45 MHz, which gives exactly 15 ticks per USB low-speed bit).
+* SRAM build, second run: LVS clean again and Magic DRC gone. It still failed on 17
+  routing DRC errors, 73 KLayout DRC errors and slow-corner setup. Third attempt:
+  placement density 45% (the SRAM build is only about 9k cells), a 30 ns clock for a first
+  clean sign-off, and DRC left to the Tiny Tapeout precheck as the stock template does.
+  The precheck log names each DRC rule, which LibreLane's table did not.
 
-Check the GitHub Actions page for the current GDS / precheck / gate-level results of
-each branch.
+* SRAM build, third run (45416354844): **green**. GDS complete, with routing DRC, LVS
+  and setup/hold at every corner clean (30 ns clock, 24.7 % utilisation). The Tiny
+  Tapeout precheck passed, and gate-level simulation of the routed netlist with the
+  IHP SRAM macros passed 15/15 directed tests. (The other 4 were skipped by a test
+  setting that is now fixed, so the next run covers all 19.)
+* The only red job is `viewer`, which publishes the 3D preview to GitHub Pages. Pages
+  is not enabled on the repository (Settings → Pages → Source: GitHub Actions). It is
+  not part of the submission.
 
-Decision rule from the plan: submit `setl-sram` if it is green. Otherwise submit the
-fallback, and spend its spare area on more memory words.
+**Decision (rule from the plan): `setl-sram` is the submission build.** The 64-word
+fallback stays on `setl-rewrite` as a backup.
 
 ## Next
 
-1. Get both GDS builds green; record area, timing (slack at 50 MHz) and precheck.
-2. Run gate-level simulation of the directed tests (the GL job in the GDS workflow).
+1. Tighten the clock again (30 ns now; 48–60 MHz is needed for exact USB low-speed
+   rates), now that routing is clean at 45 % density.
+2. Merge `setl-sram` into `main` (or open a PR) when you are ready.
 3. USB: test the receiver against a USB LS decoder-driven stimulus with jitter and frequency offset.
 4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
 5. Bring-up on the demo board: `tools/setl/rp2350.py` (MicroPython transport) is written
