@@ -33,6 +33,11 @@ Issues found and fixed in CI so far:
   corner (1.08 V, 125 °C) at 50 MHz. Fixed as in Pettit's flow: KLayout DRC with the
   CMOS5L deck instead of Magic, post-global-route timing repair with a 0.25 ns margin,
   and a 22 ns clock (45 MHz, which gives exactly 15 ticks per USB low-speed bit).
+* SRAM build, second run: LVS clean again and Magic DRC gone. It still failed on 17
+  routing DRC errors, 73 KLayout DRC errors and slow-corner setup. Third attempt:
+  placement density 45% (the SRAM build is only about 9k cells), a 30 ns clock for a first
+  clean sign-off, and DRC left to the Tiny Tapeout precheck as the stock template does.
+  The precheck log names each DRC rule, which LibreLane's table did not.
 
 Check the GitHub Actions page for the current GDS / precheck / gate-level results of
 each branch.
