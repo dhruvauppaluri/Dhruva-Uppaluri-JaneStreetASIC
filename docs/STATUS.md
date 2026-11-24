@@ -15,12 +15,12 @@
 
 ## Physical design
 
-Two builds are hardened by the Tiny Tapeout GitHub action:
+Two builds exist. `main` holds the SRAM build, which is the submission:
 
 | branch | memory | config |
 |---|---|---|
-| `setl-rewrite` | 64-word flip-flop fallback (stock flow) | `src/config.json`, 50 MHz |
-| `setl-sram` | two IHP 512×32 SRAM macros | adds `SETL_IHP_SRAM`, macro placement and PDN on the SRAM column grid, and Ken Pettit's Apache-2.0 `ExtendPowerStripes` step (`librelane_plugin_setl_pdn.py`) |
+| `main` (= `setl-sram`) | two IHP 512×32 SRAM macros | `SETL_IHP_SRAM`, macro placement and PDN on the SRAM column grid, and Ken Pettit's Apache-2.0 `ExtendPowerStripes` step (`librelane_plugin_setl_pdn.py`) |
+| `setl-rewrite` | 64-word flip-flop fallback (stock flow) | backup only |
 
 Issues found and fixed in CI so far:
 * ABC used an I/O pad cell (`sg13cmos5l_IOPadOut16mA`) as a buffer, and global placement
@@ -48,14 +48,14 @@ Issues found and fixed in CI so far:
   is not enabled on the repository (Settings → Pages → Source: GitHub Actions). It is
   not part of the submission.
 
-**Decision (rule from the plan): `setl-sram` is the submission build.** The 64-word
-fallback stays on `setl-rewrite` as a backup.
+**Decision (rule from the plan): the SRAM build is the submission and lives on `main`.**
+The 64-word fallback stays on `setl-rewrite` as a backup. Its 8×4 flip-flop build ran for
+more than five hours in CI and was stopped once the SRAM build was green.
 
 ## Next
 
 1. Tighten the clock again (30 ns now; 48–60 MHz is needed for exact USB low-speed
    rates), now that routing is clean at 45 % density.
-2. Merge `setl-sram` into `main` (or open a PR) when you are ready.
 3. USB: test the receiver against a USB LS decoder-driven stimulus with jitter and frequency offset.
 4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
 5. Bring-up on the demo board: `tools/setl/rp2350.py` (MicroPython transport) is written
