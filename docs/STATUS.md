@@ -44,6 +44,9 @@ Issues found and fixed in CI so far:
   Tapeout precheck passed, and gate-level simulation of the routed netlist with the
   IHP SRAM macros passed 15/15 directed tests. (The other 4 were skipped by a test
   setting that is now fixed, so the next run covers all 19.)
+* SRAM build, fourth run (45427245051), with every test enabled at gate level: GDS,
+  precheck and **gate-level simulation 19/19 pass** on the routed netlist with the IHP SRAM
+  macros, including USB low-speed TX/RX, CAN, and I²C controller and target on one chip.
 * The only red job is `viewer`, which publishes the 3D preview to GitHub Pages. Pages
   is not enabled on the repository (Settings → Pages → Source: GitHub Actions). It is
   not part of the submission.

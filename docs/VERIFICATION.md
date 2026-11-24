@@ -132,8 +132,6 @@ make GATES=yes                        # gate level (after the GDS action has pro
 ## Not yet done (see the plan)
 
 * Unbounded versions of the program-level proofs.
-* Gate-level simulation with the SRAM build. The Tiny Tapeout GL action will provide it once
-  the SRAM hardening is in place.
 * FPGA bring-up.
 
 ## AI use
