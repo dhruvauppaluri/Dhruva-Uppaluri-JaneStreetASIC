@@ -27,6 +27,12 @@ Issues found and fixed in CI so far:
   could not place it (GRT-0010). Fixed with `EXTRA_EXCLUDED_CELLS`.
 * The SRAM build's lint step could not see the macro (MODMISSING). Fixed with a `vh`
   blackbox view.
+* SRAM build, first full run: placement, routing and **LVS completed clean**, which
+  verifies the SRAM power hookup through `ExtendPowerStripes`. Two things failed: Magic
+  DRC (230k errors, from the SRAM macro's internals) and 8 setup endpoints at the slow
+  corner (1.08 V, 125 °C) at 50 MHz. Fixed as in Pettit's flow: KLayout DRC with the
+  CMOS5L deck instead of Magic, post-global-route timing repair with a 0.25 ns margin,
+  and a 22 ns clock (45 MHz, which gives exactly 15 ticks per USB low-speed bit).
 
 Check the GitHub Actions page for the current GDS / precheck / gate-level results of
 each branch.
