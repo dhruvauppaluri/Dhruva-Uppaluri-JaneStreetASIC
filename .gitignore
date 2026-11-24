@@ -23,3 +23,4 @@ formal/build/
 formal/*_bmc/
 formal/*_reach/
 formal/*_prove/
+test/results*.xml
