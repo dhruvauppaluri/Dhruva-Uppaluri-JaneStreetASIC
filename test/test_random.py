@@ -87,7 +87,24 @@ async def run_seed(dut, seed):
     task = cocotb.start_soon(pins())
     await host.run(0xF)
     end = h.cycle + CYCLES
+    last_pc = [None] * 4
     while h.cycle < end:
+        # coverage direction: a lane that has not changed state since the last
+        # look is parked on a condition that may never come -- restart it,
+        # sometimes from a different start state
+        m = h.model
+        stuck = [i for i, L in enumerate(m.lanes)
+                 if (m.run >> i) & 1 and L.valid and L.pc == last_pc[i]]
+        last_pc = [L.pc for L in m.lanes]
+        if stuck and rng.random() < 0.7:
+            for i in stuck:
+                if rng.random() < 0.5:
+                    await host.write_regs(i * 16 + isa.R_START_LO, [i * 32 + rng.randrange(REGION), 0])
+            mask = sum(1 << i for i in stuck)
+            await host.write_reg(isa.G_RUN, m.run & ~mask & 0xF)
+            await host.write_reg(isa.G_RUN, (m.run | mask) & 0xF)
+            h.model.cov["restarts"] = h.model.cov.get("restarts", 0) + len(stuck)
+            continue
         op = rng.choices(range(8), weights=[3, 2, 1, 2, 4, 1, 1, 4])[0]
         lane = rng.randrange(4)
         if op == 0:

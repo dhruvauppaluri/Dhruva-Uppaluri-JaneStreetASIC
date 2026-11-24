@@ -64,9 +64,10 @@ The current default is 16 seeds, about 850k clock cycles, about 270k lane ticks 
 22k state entries. All seeds show zero mismatches. Coverage counters (`model.cov`) are
 printed per seed.
 
-Known gap: coverage still varies a lot between seeds, because random graphs often settle
-into states that wait for conditions that never occur. A coverage-directed generator is
-on the to-do list.
+The stimulus is coverage-directed. The test watches the golden model, and a lane that
+has not changed state since the last look (parked on a condition that may never come) is
+restarted, sometimes from a different start state. This steadied the per-seed coverage:
+the minimum state entries per seed went from tens to hundreds or thousands.
 
 ## 4. Formal proofs of the programs on the RTL (`formal/`)
 
