@@ -280,4 +280,9 @@ module setl_lane #(
     always @(posedge clk)
         if (rd_me & pending) rec <= rd_data;
 
+`ifdef FORMAL
+    // Determinism of the barrel: a lane never owns its slot while it is still
+    // waiting for record data, so it never has to stall.
+    always @(*) if (rst_n) assert(!(slot_me && pending));
+`endif
 endmodule

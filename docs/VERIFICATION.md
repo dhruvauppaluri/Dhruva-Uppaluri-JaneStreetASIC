@@ -94,8 +94,25 @@ solver must find a trace that reaches it. This shows the proofs are not vacuous.
 check found a real harness bug during development: a mis-sized I²C input vector made
 the read path unreachable, and the shallow proof had been passing vacuously.
 
-An unbounded proof (PDR) did not converge within 30 minutes on the full lane datapath.
-Inductive invariants are future work.
+### Unbounded proof: the barrel never stalls a lane (`formal/barrel.sby`)
+
+This proof runs on the **complete chip** with the host SPI pins and protocol pins left
+completely free. That means any register, memory or FIFO traffic, lanes started and
+stopped at any time, and the barrel width changed at any time. The record memory is
+replaced by arbitrary data (`SETL_FORMAL_ANY_MEM`), so it covers every program at once.
+ABC's PDR proves, for all time:
+
+* at most one lane fetches a record in any clock;
+* every fetch is answered on the very next clock, to the lane that asked;
+* a lane never reaches its slot while it is still waiting for record data.
+
+Together these are the architecture's determinism claim: a lane can change state on
+every one of its ticks, whatever the other lanes and the host do. The proof takes about
+15 s. A reachability check (lane 3 receiving a record in 4-lane mode, which needs real
+SPI configuration traffic) shows it is not vacuous.
+
+The protocol-level proofs above stay bounded. PDR on the full lane datapath with a
+protocol monitor did not converge within 30 minutes.
 
 ```
 cd formal && make                 # about 7 minutes; needs yosys, sby, yosys-abc
@@ -114,7 +131,7 @@ make GATES=yes                        # gate level (after the GDS action has pro
 
 ## Not yet done (see the plan)
 
-* Unbounded (inductive) versions of the program proofs.
+* Unbounded versions of the program-level proofs.
 * Gate-level simulation with the SRAM build. The Tiny Tapeout GL action will provide it once
   the SRAM hardening is in place.
 * FPGA bring-up.

@@ -8,7 +8,7 @@ SRC_spi     = spi_ctrl
 SRC_i2c     = i2c_ctrl
 ASM = PYTHONPATH=../tools python3 -m setl.asm
 
-all: $(PROGS)
+all: $(PROGS) barrel
 
 build/%/rom.vh: ../programs/*.setl ../tools/setl/*.py
 	mkdir -p build/$*
@@ -18,7 +18,12 @@ $(PROGS): %: build/%/rom.vh
 	sby -f $@.sby bmc
 	sby -f $@.sby reach
 
+# unbounded proof that the barrel never stalls a lane (any program, any host traffic)
+barrel:
+	sby -f barrel.sby prove
+	sby -f barrel.sby reach
+
 clean:
 	rm -rf build *_bmc *_reach *_prove
 
-.PHONY: all clean $(PROGS)
+.PHONY: all clean barrel $(PROGS)

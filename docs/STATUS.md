@@ -10,7 +10,7 @@
 | Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; SWD; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX and RX with clock recovery, CAN 2.0A TX (generated) |
 | Directed tests | 19 (RTL, 512-word memory) / 15 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
 | Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
-| Formal | bounded proofs of the UART / SPI / I²C programs on the lane RTL plus reachability checks; also in CI |
+| Formal | unbounded proof that the barrel never stalls a lane (whole chip, any program, any host traffic); bounded proofs of the UART / SPI / I²C programs on the lane RTL; reachability checks for each; also in CI |
 | Lint | Verilator `-Wall` clean |
 
 ## Physical design

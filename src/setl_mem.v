@@ -19,7 +19,12 @@ module setl_mem (
     input  wire [63:0] bmask,
     output wire [63:0] rdata
 );
-`ifdef SETL_IHP_SRAM
+`ifdef SETL_FORMAL_ANY_MEM
+    // formal only: the records are arbitrary (every program at once)
+    (* anyseq *) wire [63:0] any_data;
+    assign rdata = any_data;
+    wire _unused_fm = &{clk, en, we, addr, wdata, bmask, 1'b0};
+`elsif SETL_IHP_SRAM
     genvar h;
     generate
         for (h = 0; h < 2; h = h + 1) begin : g_sram

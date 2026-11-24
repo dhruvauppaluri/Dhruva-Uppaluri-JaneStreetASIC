@@ -121,7 +121,7 @@ Full ISA and register map: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Verification
 
-Four independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
+Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
 
 1. **Lockstep golden model.** In every RTL test, a Python model of the core runs beside
    the RTL. It is fed the same pins and the host strobes the RTL produced, and every
@@ -134,7 +134,11 @@ Four independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
 3. **Constrained-random co-simulation.** Random programs, configurations, pins and host
    traffic, including program rewrites while lanes run. 16 seeds, about 850k clocks,
    zero mismatches.
-4. **Formal proofs of the programs on the RTL.** The assembler emits a program as a ROM,
+4. **An unbounded proof of determinism.** On the whole chip, with free host pins and
+   arbitrary program data, PDR proves that the barrel never stalls a lane: at most one
+   fetch per clock, every fetch answered on the next clock, and no lane ever reaching
+   its slot while waiting.
+5. **Formal proofs of the programs on the RTL.** The assembler emits a program as a ROM,
    and SymbiYosys proves protocol properties of *that program running on the real lane
    RTL* against an unconstrained environment. Examples: every UART frame carries exactly
    the next pushed byte with exact bit timing; SPI MOSI and CS discipline; I²C SDA changes
