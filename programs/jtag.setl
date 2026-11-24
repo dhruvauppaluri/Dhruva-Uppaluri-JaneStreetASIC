@@ -1,0 +1,17 @@
+; JTAG bit-level adapter (MSB first, CTRL msb=1).  slots: 0 = TCK, 1 = TMS, 2 = TDI.
+; Each TX byte carries four TCK cycles as (TMS, TDI) pairs, MSB first:
+;   [tms0 tdi0 tms1 tdi1 tms2 tdi2 tms3 tdi3]
+; Each byte pushed to RX holds TDO for those cycles in bits 6, 4, 2, 0
+; (sampled one tick before the rising TCK edge).  The host walks the TAP (setl.jtag).
+; TA = half TCK period - 1 ticks.
+.pin tdo ui1
+.in tdo
+.lane jtag
+j_idle:   set 0=0 wait txready                            goto j_load
+j_load:   pop cnt=4                                       goto j_tms
+j_tms:    out 1 shift                                     goto j_tdi
+j_tdi:    out 2 timer=TA wait timer                       goto j_samp
+j_samp:   shift                                           goto j_hi
+j_hi:     set 0=1 dec timer=TA wait timer                 goto j_lo
+j_lo:     set 0=0                                         if cnt0 goto j_done else j_tms
+j_done:   push                                            if txready goto j_load else j_idle

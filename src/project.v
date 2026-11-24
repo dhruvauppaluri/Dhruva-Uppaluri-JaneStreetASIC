@@ -99,6 +99,7 @@ module tt_um_dhruvauppaluri_setl (
                 .rd_me(rd_valid && rd_lane == i), .rd_data(mem_rdata),
                 .host_push(reg_we && reg_waddr == (i * 16 + 15)), .host_wdata(reg_wdata),
                 .host_pop(reg_commit && reg_caddr == (i * 16 + 15)),
+                .host_oinit_we(reg_we && reg_waddr == (i * 16 + 12)),
                 .rx_head(rx_head_v[8*i +: 8]), .tx_level(tx_level_v[3*i +: 3]),
                 .rx_level(rx_level_v[3*i +: 3]),
                 .slot_val(slot_val_v[4*i +: 4]), .flag(flag[i]),

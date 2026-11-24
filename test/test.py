@@ -221,3 +221,131 @@ async def test_spi_target(dut):
     assert got == [0x5A, 0xC3, 0x0F], [hex(x) for x in got]
     assert list(await host.pop(0, 3)) == [0x9E, 0x21, 0xF0]
     h.check()
+
+
+@cocotb.test()
+async def test_i2c_target(dut):
+    """SETL as an I2C target at address 0x42: writes, repeated-START read, wrong address."""
+    h, host = await setup(dut)
+    img, sym, _ = prog("i2c_target.setl")
+    await host.load_image(img)
+    await host.config_lane(0, start=sym["i2c_target"], msb=True,
+                           outmap=[("uio1", "od")], match=0x42 << 1, mask=0xFE)
+    await host.push(0, [0x11, 0x22])
+    await host.run(1)
+    c = bfm.I2cController(h, scl=0, sda=1, half=30)
+    await ClockCycles(dut.clk, 50)
+    # write two bytes
+    await c.start()
+    assert await c.write(0x42 << 1), "address not ACKed"
+    assert await c.write(0x10)
+    assert await c.write(0xAB)
+    await c.stop()
+    assert list(await host.pop(0, 2)) == [0x10, 0xAB]
+    # pointer write, repeated START, read two bytes (ACK then NACK)
+    await c.start()
+    assert await c.write(0x42 << 1)
+    assert await c.write(0x20)
+    await c.restart()
+    assert await c.write((0x42 << 1) | 1)
+    got = [await c.read(True), await c.read(False)]
+    await c.stop()
+    assert got == [0x11, 0x22], [hex(x) for x in got]
+    assert list(await host.pop(0, 1)) == [0x20]
+    # another device's address is ignored (NACK)
+    await c.start()
+    assert not await c.write(0x43 << 1), "wrong address was ACKed"
+    await c.stop()
+    assert (await host.status(0))["rx"] == 0
+    h.check()
+
+
+SMALL_MEM = os.environ.get("SETL_MEM") == "small" or os.environ.get("GATES") == "yes"
+
+
+@cocotb.test(skip=SMALL_MEM)
+async def test_i2c_controller_and_target_on_one_chip(dut):
+    """Lane 0 is an I2C controller, lane 1 an I2C target, on the same open-drain
+    pins: the chip talks to itself through its own pads (needs the 512-word memory)."""
+    h, host = await setup(dut)
+    c_img, c_sym, _ = prog("i2c_ctrl.setl")
+    with open(os.path.join(PROG, "i2c_target.setl")) as f:
+        t_img, t_sym, _ = assemble(".org 48\n" + f.read())
+    await host.load_image({**c_img, **t_img})
+    await host.config_lane(0, start=c_sym["i2c"], ta=15, tb=7, msb=True,
+                           outmap=[("uio0", "od"), ("uio1", "od")], match=0x01, mask=0x01)
+    await host.config_lane(1, start=t_sym["i2c_target"], msb=True,
+                           outmap=[("uio1", "od")], match=0x42 << 1, mask=0xFE)
+    await host.push(1, [0x99, 0x77])          # what the target will answer
+    await host.run(0b11)
+    await host.push(0, [0x42 << 1, 0x10, 0x55])
+    await ClockCycles(dut.clk, 3000)
+    assert list(await host.pop(1, 2)) == [0x10, 0x55]
+    await host.push(0, [(0x42 << 1) | 1, 0, 0])
+    await ClockCycles(dut.clk, 3500)
+    assert list(await host.pop(0, 2)) == [0x99, 0x77]
+    assert (await host.status(0))["event"] == 0     # no NACK seen by the controller
+    h.check()
+
+
+@cocotb.test()
+async def test_ws2812(dut):
+    h, host = await setup(dut)
+    img, sym, _ = prog("ws2812.setl")
+    await host.load_image(img)
+    A, B = 12, 13   # ticks: 0.4 us and 0.43 us at 30 MHz ticks
+    await host.config_lane(0, start=sym["ws2812"], ta=A - 1, tb=B - 1, msb=True,
+                           outmap=["uo0"], outinit=0)
+    data = [0x00, 0xFF, 0xA5]
+    await host.push(0, data)
+    dec = cocotb.start_soon(bfm.ws2812_decode(h, 0, 24, threshold=2 * (A + B // 2)))
+    await host.run(1)
+    bits, widths = await dec
+    got = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, 24, 8)]
+    assert got == data, (got, widths)
+    # high times: "0" = A ticks, "1" = A+B ticks (2 clocks per tick)
+    assert set(widths) == {2 * A, 2 * (A + B)}, sorted(set(widths))
+    h.check()
+
+
+@cocotb.test()
+async def test_ps2_rx(dut):
+    h, host = await setup(dut)
+    img, sym, _ = prog("ps2_rx.setl")
+    await host.load_image(img)
+    h.set_ui(2, 1)
+    h.set_ui(3, 1)
+    await host.config_lane(0, start=sym["ps2_rx"])
+    await host.run(1)
+    await ClockCycles(dut.clk, 20)
+    for b in (0x1C, 0xF0, 0x1C):        # 'A' make, break prefix, 'A'
+        await bfm.ps2_send(h, 2, 3, b, half=60)
+    assert list(await host.pop(0, 3)) == [0x1C, 0xF0, 0x1C]
+    h.check()
+
+
+@cocotb.test()
+async def test_jtag_idcode(dut):
+    from setl import jtag
+    h, host = await setup(dut)
+    img, sym, _ = prog("jtag.setl")
+    await host.load_image(img)
+    await host.config_lane(0, start=sym["jtag"], ta=3, msb=True,
+                           outmap=["uo2", "uo3", "uo4"], outinit=0)
+    tap = bfm.JtagTap(h, tck=2, tms=3, tdi=4, tdo_ui=1, idcode=0x4BA00477)
+    cocotb.start_soon(tap.run())
+    await host.run(1)
+    seq, first = jtag.read_idcode_sequence()
+    txb = jtag.pack(seq)
+    rx = []
+    for i in range(0, len(txb), 4):          # stream through the 4-deep FIFOs
+        await host.push(0, txb[i:i + 4])
+        await ClockCycles(dut.clk, 4 * 2 * 16 * 4 + 100)
+        st = await host.status(0)
+        rx += list(await host.pop(0, st["rx"]))
+    bits = jtag.unpack(rx, len(seq))
+    idcode = sum(b << i for i, b in enumerate(bits[first:first + 32]))
+    assert tap.clocks == len(seq), (tap.clocks, len(seq))
+    assert idcode == 0x4BA00477, hex(idcode)
+    assert tap.state == "RTI"
+    h.check()

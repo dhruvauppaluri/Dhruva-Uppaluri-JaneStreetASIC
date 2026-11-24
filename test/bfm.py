@@ -182,3 +182,163 @@ class I2cTarget:
                     else:
                         st = "idle"
             prev_scl, prev_sda = scl, sda
+
+
+class I2cController:
+    """Bit-banged open-drain I2C controller driving the uio bus (ext bits)."""
+
+    def __init__(self, h, scl, sda, half):
+        self.h, self.scl, self.sda, self.half = h, scl, sda, half
+
+    async def _w(self):
+        await ClockCycles(self.h.dut.clk, self.half)
+
+    async def start(self):
+        h = self.h
+        h.set_ext(self.sda, 1)
+        h.set_ext(self.scl, 1)
+        await self._w()
+        h.set_ext(self.sda, 0)
+        await self._w()
+        h.set_ext(self.scl, 0)
+        await self._w()
+
+    async def restart(self):
+        h = self.h
+        h.set_ext(self.sda, 1)
+        await self._w()
+        await self.start()
+
+    async def stop(self):
+        h = self.h
+        h.set_ext(self.sda, 0)
+        await self._w()
+        h.set_ext(self.scl, 1)
+        await self._w()
+        h.set_ext(self.sda, 1)
+        await self._w()
+
+    async def _clock(self):
+        """One SCL pulse; returns SDA sampled while SCL is high."""
+        h = self.h
+        h.set_ext(self.scl, 1)
+        await self._w()
+        v = h.uio_level(self.sda)
+        h.set_ext(self.scl, 0)
+        await self._w()
+        return v
+
+    async def write(self, b):
+        for i in range(7, -1, -1):
+            self.h.set_ext(self.sda, (b >> i) & 1)
+            await self._w()
+            await self._clock()
+        self.h.set_ext(self.sda, 1)
+        await self._w()
+        return (await self._clock()) == 0   # True = ACK
+
+    async def read(self, ack):
+        self.h.set_ext(self.sda, 1)
+        v = 0
+        for _ in range(8):
+            await self._w()
+            v = (v << 1) | await self._clock()
+        self.h.set_ext(self.sda, 0 if ack else 1)
+        await self._w()
+        await self._clock()
+        self.h.set_ext(self.sda, 1)
+        return v
+
+
+class JtagTap:
+    """IEEE 1149.1 TAP with a 4-bit IR (IDCODE=0001, BYPASS=1111) and a
+    32-bit IDCODE register.  Samples TMS/TDI on rising TCK, updates TDO on falling."""
+    NEXT = {  # state: (next if TMS=0, next if TMS=1)
+        "TLR": ("RTI", "TLR"), "RTI": ("RTI", "SELDR"),
+        "SELDR": ("CAPDR", "SELIR"), "CAPDR": ("SHDR", "EX1DR"), "SHDR": ("SHDR", "EX1DR"),
+        "EX1DR": ("PADR", "UPDR"), "PADR": ("PADR", "EX2DR"), "EX2DR": ("SHDR", "UPDR"),
+        "UPDR": ("RTI", "SELDR"), "SELIR": ("CAPIR", "TLR"), "CAPIR": ("SHIR", "EX1IR"),
+        "SHIR": ("SHIR", "EX1IR"), "EX1IR": ("PAIR", "UPIR"), "PAIR": ("PAIR", "EX2IR"),
+        "EX2IR": ("SHIR", "UPIR"), "UPIR": ("RTI", "SELDR"),
+    }
+
+    def __init__(self, h, tck, tms, tdi, tdo_ui, idcode):
+        self.h, self.tck, self.tms, self.tdi, self.tdo = h, tck, tms, tdi, tdo_ui
+        self.idcode = idcode
+        self.state = "TLR"
+        self.ir = 0b0001
+        self.sh = 0
+        self.shlen = 32
+        self.clocks = 0
+
+    async def run(self):
+        h = self.h
+        prev = 0
+        out = 0
+        while True:
+            await RisingEdge(h.dut.clk)
+            uo = int(h.dut.uo_out.value)
+            tck = (uo >> self.tck) & 1
+            if tck and not prev:                       # rising: sample
+                self.clocks += 1
+                tms, tdi = (uo >> self.tms) & 1, (uo >> self.tdi) & 1
+                s = self.state
+                if s == "SHDR" or s == "SHIR":
+                    self.sh = (self.sh >> 1) | (tdi << (self.shlen - 1))
+                nxt = self.NEXT[s][tms]
+                if nxt == "TLR":
+                    self.ir = 0b0001
+                if nxt == "CAPDR":
+                    if self.ir == 0b0001:
+                        self.sh, self.shlen = self.idcode, 32
+                    else:
+                        self.sh, self.shlen = 0, 1
+                if nxt == "CAPIR":
+                    self.sh, self.shlen = 0b0001, 4
+                if s == "UPIR":
+                    pass
+                if nxt == "UPIR":
+                    self.ir = self.sh & 0xF
+                self.state = nxt
+            elif prev and not tck:                     # falling: drive TDO
+                out = self.sh & 1 if self.state in ("SHDR", "SHIR") else 0
+                h.set_ui(self.tdo, out)
+            prev = tck
+
+
+async def ps2_send(h, clk_bit, dat_bit, byte, half):
+    """PS/2 device frame: start, 8 data LSB first, odd parity, stop."""
+    clk = h.dut.clk
+    bits = [0] + [(byte >> i) & 1 for i in range(8)]
+    bits.append(1 - (bin(byte).count("1") & 1))
+    bits.append(1)
+    for b in bits:
+        h.set_ui(dat_bit, b)
+        await ClockCycles(clk, half)
+        h.set_ui(clk_bit, 0)          # host samples on the falling edge
+        await ClockCycles(clk, half)
+        h.set_ui(clk_bit, 1)
+    h.set_ui(dat_bit, 1)
+    await ClockCycles(clk, 4 * half)
+
+
+async def ws2812_decode(h, pin, nbits, threshold, timeout=400000):
+    """Decode WS2812 bits from high-pulse widths (in clocks)."""
+    clk = h.dut.clk
+    bits, widths = [], []
+    prev = h.uo_level(pin)
+    hi = 0
+    n = 0
+    while len(bits) < nbits:
+        await RisingEdge(clk)
+        n += 1
+        assert n < timeout, "WS2812 decode timeout"
+        v = (int(h.dut.uo_out.value) >> pin) & 1
+        if v:
+            hi += 1
+        if prev and not v:
+            widths.append(hi)
+            bits.append(1 if hi > threshold else 0)
+            hi = 0
+        prev = v
+    return bits, widths

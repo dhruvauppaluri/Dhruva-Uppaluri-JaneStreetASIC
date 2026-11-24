@@ -37,7 +37,7 @@
         .cfg_ta(cfg_ta), .cfg_tb(cfg_tb), .cfg_match(cfg_match), .cfg_mask(cfg_mask),
         .cfg_outinit(cfg_outinit),
         .fetch_req(fetch_req), .fetch_addr(fetch_addr), .rd_me(rd_me), .rd_data(q),
-        .host_push(host_push), .host_wdata(host_wdata), .host_pop(host_pop),
+        .host_push(host_push), .host_wdata(host_wdata), .host_pop(host_pop), .host_oinit_we(1'b0),
         .rx_head(rx_head), .tx_level(tx_level), .rx_level(rx_level),
         .slot_val(slot_val), .flag(flag), .event_set(event_set), .ovf_set(ovf_set),
         .pc_o(pc_o), .sr_o(sr_o), .cnt_o(cnt_o),

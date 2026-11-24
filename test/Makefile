@@ -48,6 +48,7 @@ TOPLEVEL = tb
 
 # List test modules to run, separated by commas and without the .py suffix:
 COCOTB_TEST_MODULES ?= test,test_random
+export SETL_MEM
 export PYTHONPATH := $(PWD)/../tools:$(PWD):$(PYTHONPATH)
 
 # include cocotb's make rules to take care of the simulator setup

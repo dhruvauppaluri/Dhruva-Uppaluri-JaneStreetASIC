@@ -143,6 +143,8 @@ class Chip:
                 L.omap[r - isa.R_OMAP0] = val & 0x7F
             elif r == isa.R_OUTINIT:
                 L.outinit = val & 0xF
+                if not (self.run >> L.idx) & 1:   # a stopped lane drives it at once
+                    L.slot_val = val & 0xF
             elif r == isa.R_MATCH:
                 L.match = val
             elif r == isa.R_MASK:

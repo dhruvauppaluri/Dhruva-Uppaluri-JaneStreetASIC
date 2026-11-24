@@ -1,0 +1,12 @@
+; PS/2 receiver (device-to-host: keyboard / mouse).  The device drives CLK;
+; DATA is read on each falling CLK edge: start, 8 data bits LSB first, parity, stop.
+; Each data byte is pushed to RX (parity is not checked on chip).
+.pin clk ui2
+.pin dat ui3
+.lane ps2_rx
+p_idle:   cnt=8 in clk wait fall                          goto p_bit     ; start bit
+p_bit:    in clk wait fall                                goto p_samp
+p_samp:   in dat shift dec                                if cnt0 goto p_par else p_bit
+p_par:    in clk wait fall                                goto p_stop    ; parity
+p_stop:   in clk wait fall                                goto p_push    ; stop
+p_push:   push                                            goto p_idle

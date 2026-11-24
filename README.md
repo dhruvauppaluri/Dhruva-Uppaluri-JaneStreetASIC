@@ -14,7 +14,8 @@ per lane tick and no stalls.
 | Verification | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 | Status and plan | [docs/STATUS.md](docs/STATUS.md) |
 | Assembler / model / host driver | `tools/setl/` |
-| Example programs | `programs/` (UART TX/RX, SPI modes 0–3, I²C controller) |
+| Example programs | `programs/`: UART TX/RX and auto-baud RX, SPI controller (modes 0–3) and target, I²C controller and target, JTAG, PS/2, WS2812 |
+| Formal proofs | `formal/` (programs proven on the lane RTL) |
 
 ```
 cd test && make                       # directed protocol tests + lockstep golden model

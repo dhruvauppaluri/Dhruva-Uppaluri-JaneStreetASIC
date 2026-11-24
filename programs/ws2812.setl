@@ -1,0 +1,13 @@
+; WS2812 / NeoPixel LED driver, MSB first (CTRL msb=1).  slot 0 = DIN.
+; Symmetric timing: "0" = high A, low A+B;  "1" = high A+B, low A.
+; TA = A - 1 ticks (~0.4 us), TB = B - 1 ticks (~0.45 us).  Bytes are G, R, B per LED.
+; After the FIFO runs dry the line stays low (the host waits >50 us to latch).
+.lane ws2812
+ws_idle:  set 0=0 wait txready                            goto ws_load
+ws_load:  pop cnt=8                                       goto ws_bit
+ws_bit:   set 0=1 timer=TA wait timer                     if bit goto w1 else w0
+w1:       timer=TB wait timer                             goto w1l
+w1l:      set 0=0 shift dec timer=TA wait timer           if cnt0 goto ws_next else ws_bit
+w0:       set 0=0 shift dec timer=TB wait timer           goto w0l
+w0l:      timer=TA wait timer                             if cnt0 goto ws_next else ws_bit
+ws_next:                                                  if txready goto ws_load else ws_idle

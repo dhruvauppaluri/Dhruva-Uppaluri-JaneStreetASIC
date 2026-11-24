@@ -33,6 +33,7 @@ module setl_lane #(
     input  wire        host_push,
     input  wire [7:0]  host_wdata,
     input  wire        host_pop,
+    input  wire        host_oinit_we,   // OUTINIT written: a stopped lane takes it at once
     output wire [7:0]  rx_head,
     output wire [2:0]  tx_level,
     output wire [2:0]  rx_level,
@@ -204,6 +205,7 @@ module setl_lane #(
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
             slot_val <= cfg_outinit; flag <= 1'b0; sw <= 16'd0;
         end else begin
+            if (host_oinit_we & ~run) slot_val <= host_wdata[3:0];
             if (rd_me & pending) begin
                 valid <= 1'b1; pending <= 1'b0; first <= 1'b1;
             end

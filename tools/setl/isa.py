@@ -89,7 +89,7 @@ LANE_STRIDE = 0x10
 R_CTRL, R_START_LO, R_START_HI, R_DIV = 0, 1, 2, 3
 R_TA_LO, R_TA_HI, R_TB_LO, R_TB_HI = 4, 5, 6, 7
 R_OMAP0 = 8          # 8..11
-R_OUTINIT = 0xC
+R_OUTINIT = 0xC   # writing it to a stopped lane also sets the slots immediately
 R_MATCH, R_MASK, R_FIFO = 0xD, 0xE, 0xF
 
 G_CTRL = 0x80        # [0] 4-lane mode

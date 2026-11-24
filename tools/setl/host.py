@@ -78,6 +78,8 @@ class Setl:
                 v |= isa.OMAP_INV
             om.append(v)
         base = lane * isa.LANE_STRIDE
+        # idle levels first, so a pin never shows anything else once it is mapped
+        self.write_reg(base + isa.R_OUTINIT, outinit)
         self.write_regs(base, [
             1 if msb else 0, start & 0xFF, start >> 8, div,
             ta & 0xFF, ta >> 8, tb & 0xFF, tb >> 8,

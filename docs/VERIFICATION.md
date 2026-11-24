@@ -31,6 +31,11 @@ protocols from their specifications:
 | `test_spi_modes` | SPI controller, **all four modes**, full duplex, multi-byte frame with CS held |
 | `test_uart_autobaud` | the lane learns 40 and then 26 ticks/bit from a calibration character, receives at each rate, and the learned TA is read back |
 | `test_spi_target` | SPI **target** role: a 3-byte full-duplex exchange driven by a test-bench controller |
+| `test_i2c_target` | SETL as an I²C **target**: writes, pointer write + repeated START + read with ACK/NACK, wrong address ignored |
+| `test_i2c_controller_and_target_on_one_chip` | lane 0 is the controller and lane 1 the target, on the same open-drain pins, so the chip talks to itself through its pads (512-word memory only) |
+| `test_ws2812` | LED bit stream decoded by pulse width; exact high times |
+| `test_ps2_rx` | PS/2 keyboard frames (start, data, odd parity, stop) clocked by the device |
+| `test_jtag_idcode` | JTAG adapter against a full 16-state TAP model: reset, walk to Shift-DR, read a 32-bit IDCODE, return to Run-Test/Idle with the exact TCK count |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are
