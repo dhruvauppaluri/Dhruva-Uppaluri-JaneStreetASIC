@@ -605,3 +605,36 @@ async def test_usb_ls_loopback(dut):
     draining = False
     await drainer
     h.check()
+
+
+@cocotb.test(skip=SMALL_MEM)
+async def test_can_tx(dut):
+    """CAN 2.0A data frames: stuffing after five identical bits, CRC-15, ACK slot,
+    all generated on chip (89 records, needs the SRAM).  An independent real-time
+    receiver checks the bit grid, de-stuffs, checks the CRC and drives the ACK."""
+    from setl import can
+    h, host = await setup(dut)
+    with open(os.path.join(PROG, "can_tx.setl")) as f:
+        img, sym, _ = assemble(f.read())
+    await host.load_image(img)
+    BIT = 60                                    # ticks per bit: 500 kbit/s at 60 MHz
+    await host.config_lane(0, start=sym["can_tx"], ta=BIT - 5, tb=BIT - 4, msb=True,
+                           outmap=["uo0"], outinit=0xF,
+                           ctrl=isa.CTRL_CRC | isa.CTRL_CRC_LEFT | isa.CTRL_RUN_ANY | (5 << 4))
+    await host.config_crc(0, poly=0x4599 << 1, init=0)
+    h.set_ui(0, 1)
+    await host.run(1)
+    period = 2 * BIT
+    # 0x0F0 and 0x00 / 0xFF data force long runs, so stuffing happens in the ID and the data
+    for ident, data, ack in ((0x0F0, [0x00, 0xFF], True), (0x7FF, [], True), (0x123, [0x55], False)):
+        await host.clear_event(0)
+        rx = cocotb.start_soon(bfm.can_receive(h, tx_uo=0, rx_ui=0, period=period, ack=ack))
+        await feed_batch(host, 0, can.frame(ident, data))
+        fields, problems = await rx
+        assert not problems, problems
+        assert fields["sof"] == 0 and fields["id"] == ident and fields["dlc"] == len(data)
+        assert fields["data"] == data, fields
+        assert fields["crc"] == can.crc15(fields["body"]), (hex(fields["crc"]), hex(can.crc15(fields["body"])))
+        await ClockCycles(dut.clk, 6 * period)
+        assert (await host.status(0))["event"] == (0 if ack else 1), "ACK reporting wrong"
+    h.check()
