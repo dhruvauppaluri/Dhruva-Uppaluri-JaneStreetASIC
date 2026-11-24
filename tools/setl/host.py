@@ -49,6 +49,13 @@ class Setl:
             self.write_mem(addrs[i] * 8, data)
             i = j + 1
 
+    def load_json(self, obj, base=0):
+        """Load an assembler JSON image (dict already parsed); returns the symbols.
+        `base` relocates nothing: assemble with `.org` to place programs."""
+        image = {int(a): int(w, 16) for a, w in obj["image"].items()}
+        self.load_image(image)
+        return obj["symbols"]
+
     def read_word(self, word_addr):
         return int.from_bytes(self.read_mem(word_addr * 8, 8), "big")
 
