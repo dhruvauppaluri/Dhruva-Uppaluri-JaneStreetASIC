@@ -1,0 +1,20 @@
+; SWD (and any clocked single-wire bidirectional bus) bit engine, MSB first (CTRL msb=1).
+; slot 0 = SWCLK (push-pull), slot 1 = SWDIO (open-drain: 1 releases; needs a pull-up).
+; Each TX byte carries four clock cycles as (dir, data) pairs, MSB first:
+;   dir = 1: drive `data` on SWDIO;  dir = 0: release SWDIO (turnaround / target data)
+; Each RX byte returns SWDIO sampled just before each rising SWCLK edge, in bits
+; 6, 4, 2, 0.  setl.swd builds requests, turnarounds, ACK and data phases.
+; TA = half SWCLK period - 1 ticks.
+.pin swdio uio1
+.in swdio
+.lane swd
+w_idle:   set 0=0 wait txready                            goto w_load
+w_load:   pop cnt=4                                       goto w_dir
+w_dir:                                                    if bit goto w_drv else w_rel
+w_drv:    shift                                           goto w_drv2
+w_drv2:   out 1 timer=TA wait timer                       goto w_samp
+w_rel:    set 1=1 shift timer=TA wait timer               goto w_samp
+w_samp:   shift                                           goto w_hi
+w_hi:     set 0=1 dec timer=TA wait timer                 goto w_lo
+w_lo:     set 0=0                                         if cnt0 goto w_done else w_dir
+w_done:   push                                            if txready goto w_load else w_idle

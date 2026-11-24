@@ -488,3 +488,87 @@ async def can_receive(h, tx_uo, rx_ui, period, ack=True, timeout=400000):
             if k == ack_index + 9:               # ACK delimiter + EOF seen
                 break
     return fields, problems
+
+
+class SwdTarget:
+    """Minimal SWD debug port: line reset, request (with parity / stop / park
+    checks), turnaround, ACK=OK, then for DP reads 32 data bits + parity.
+    Samples SWDIO on rising SWCLK, changes its own drive right after it."""
+
+    def __init__(self, h, swclk_uo, swdio_uio, dpidr):
+        self.h, self.clk_bit, self.dio = h, swclk_uo, swdio_uio
+        self.dpidr = dpidr
+        self.ones = 0
+        self.log = []
+        self.errors = []
+
+    def _drive(self, v):
+        self.h.set_ext(self.dio, v, who="swd_target")
+
+    async def run(self):
+        h = self.h
+        prev = 0
+        mode = "jtag"            # jtag -> (0xE79E) -> wait_reset -> reset -> (2 zeros) idle -> req
+        last16 = 0
+        zeros = 0
+        wait_turn = False
+        req = []
+        out = []                 # bits to drive on the following rising edges
+        turn = 0
+        while True:
+            await RisingEdge(h.dut.clk)
+            swclk = (int(h.dut.uo_out.value) >> self.clk_bit) & 1
+            if swclk and not prev:                       # rising edge
+                bit = (int(h.dut.uio_in.value) >> self.dio) & 1
+                if wait_turn:                            # turnaround cycle: nobody drives
+                    wait_turn = False
+                    if out:
+                        self._drive(out.pop(0))
+                    prev = swclk
+                    continue
+                if out:                                  # we are driving
+                    self._drive(out.pop(0))
+                    if not out:
+                        turn = 1                         # turnaround back to the host
+                    prev = swclk
+                    continue
+                if turn:
+                    self._drive(1)
+                    turn = 0
+                    prev = swclk
+                    continue
+                self.ones = self.ones + 1 if bit else 0
+                zeros = 0 if bit else zeros + 1
+                last16 = ((last16 >> 1) | (bit << 15)) & 0xFFFF     # LSB-first sequence
+                if mode == "jtag":
+                    if last16 == 0xE79E:
+                        mode = "wait_reset"
+                        self.log.append("switched to SWD")
+                elif self.ones >= 50:
+                    mode = "reset"
+                elif mode == "reset":
+                    if zeros >= 2:
+                        mode = "idle"
+                elif mode == "idle":
+                    if bit:
+                        mode, req = "req", [1]
+                elif mode == "req":
+                    req.append(bit)
+                    if len(req) == 8:
+                        start, apndp, rnw, a2, a3, par, stop, park = req
+                        if par != (apndp + rnw + a2 + a3) & 1 or stop or not park:
+                            self.errors.append(f"bad request {req}")
+                            mode = "idle"
+                        else:
+                            self.log.append(("req", apndp, rnw, a2 | a3 << 1))
+                            data = self.dpidr if (not apndp and rnw and not (a2 or a3)) else 0
+                            ack = [1, 0, 0]                    # OK, LSB first
+                            bits = [(data >> i) & 1 for i in range(32)]
+                            bits.append(sum(bits) & 1)
+                            # the turnaround cycle ends with the next rising edge; ACK is
+                            # driven right after it, so the host sees it one cycle later
+                            out = ack + (bits if rnw else [])
+                            wait_turn = True
+                            self._drive(1)
+                            mode = "idle"
+            prev = swclk

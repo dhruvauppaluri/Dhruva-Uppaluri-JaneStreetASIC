@@ -7,8 +7,8 @@
 | Architecture | 64-bit state records; 4 lanes on a deterministic 2/4-way barrel; registered-read memory contract matching the IHP macro; pin router with open-drain and invert; stopwatch; CRC/LFSR and ones-run assist |
 | Executable spec | `tools/setl/model.py`, cycle-accurate |
 | Toolchain | assembler (images, `$readmemh`, Verilog ROMs), host driver, learning and impersonation (`learn.py`), JTAG helper |
-| Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX and RX with clock recovery, CAN 2.0A TX (generated) |
-| Directed tests | 18 (RTL, 512-word memory) / 13 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
+| Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; SWD; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX and RX with clock recovery, CAN 2.0A TX (generated) |
+| Directed tests | 19 (RTL, 512-word memory) / 14 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
 | Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
 | Formal | bounded proofs of the UART / SPI / I²C programs on the lane RTL plus reachability checks; also in CI |
 | Lint | Verilator `-Wall` clean |

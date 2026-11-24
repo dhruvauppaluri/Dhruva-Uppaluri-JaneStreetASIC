@@ -43,6 +43,7 @@ far cover twelve roles and protocols:
 | I²C bus sniffer | 25 | passive capture as (value, tag) pairs |
 | host-served I²C target | 50 | stretches SCL while the host computes each reply |
 | JTAG adapter | 8 | (TMS, TDI) pairs in, TDO out; the host walks the TAP |
+| SWD adapter | 10 | (direction, data) pairs on an open-drain SWDIO; the host builds requests, turnarounds, ACK and parity (`setl.swd`) |
 | PS/2 receiver | 6 | device-clocked |
 | WS2812 LED driver | 8 | pulse-width encoding |
 | MODBUS RTU TX / RX | 12 + 12 | CRC-16 appended and checked **on chip**; end of frame detected by line silence |

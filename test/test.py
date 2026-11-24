@@ -638,3 +638,36 @@ async def test_can_tx(dut):
         await ClockCycles(dut.clk, 6 * period)
         assert (await host.status(0))["event"] == (0 if ack else 1), "ACK reporting wrong"
     h.check()
+
+
+@cocotb.test()
+async def test_swd_read_dpidr(dut):
+    """SWD: line reset, JTAG-to-SWD switch, line reset, DPIDR read with ACK and parity,
+    against an independent SWD target model on an open-drain SWDIO."""
+    from setl import swd
+    h, host = await setup(dut)
+    img, sym, _ = prog("swd.setl")
+    await host.load_image(img)
+    await host.config_lane(0, start=sym["swd"], ta=3, msb=True,
+                           outmap=["uo2", ("uio1", "od")], outinit=0b0010)
+    tgt = bfm.SwdTarget(h, swclk_uo=2, swdio_uio=1, dpidr=0x2BA01477)
+    cocotb.start_soon(tgt.run())
+    await host.run(1)
+    cyc = swd.line_reset() + swd.drive(swd.JTAG_TO_SWD) + swd.line_reset() + swd.drive([0, 0])
+    rd, ack_at = swd.read_sequence(0, 0)
+    ack_at += len(cyc)
+    cyc += rd + swd.drive([0, 0])
+    txb = swd.pack(cyc)
+    rx = []
+    for i in range(0, len(txb), 4):
+        await host.push(0, txb[i:i + 4])
+        await ClockCycles(dut.clk, 4 * 4 * 16 * 2 + 150)
+        n = (await host.status(0))["rx"]
+        rx += list(await host.pop(0, n))
+    bits = swd.unpack(rx, len(cyc))
+    ack, data, parity = swd.parse_read(bits, ack_at)
+    assert not tgt.errors, tgt.errors
+    assert ack == 0b001, f"ACK {ack:03b}"
+    assert data == 0x2BA01477, hex(data)
+    assert parity == bin(data).count("1") & 1
+    h.check()
