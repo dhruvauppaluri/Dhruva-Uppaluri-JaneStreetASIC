@@ -13,7 +13,11 @@ ifneq ($(GATES),yes)
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl$(SETL_MEM)
 # SETL_MEM=small simulates the 64-word fallback memory (what the stock-flow GDS contains)
-ifneq ($(SETL_MEM),small)
+# SETL_MEM=ihp     simulates the IHP SRAM macro models (two 512x32 macros)
+ifeq ($(SETL_MEM),ihp)
+COMPILE_ARGS    += -DSETL_IHP_SRAM -DFUNCTIONAL
+VERILOG_SOURCES += $(PWD)/ihp_sram/RM_IHPSG13_1P_512x32_c2_bm_bist.v $(PWD)/ihp_sram/RM_IHPSG13_1P_core_behavioral_bm_bist.v
+else ifneq ($(SETL_MEM),small)
 COMPILE_ARGS    += -DSETL_SIM_BACKDOOR -DSETL_SIM_FULLMEM
 endif
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
@@ -33,6 +37,9 @@ VERILOG_SOURCES += $(PDK_LIBS_REF)/$(PDK_CELL_PREFIX)_io/verilog/$(PDK_CELL_PREF
 # Newer PDK versions ship the UDP (user-defined primitive) models in a separate file
 VERILOG_SOURCES += $(wildcard $(PDK_LIBS_REF)/$(PDK_CELL_PREFIX)_stdcell/verilog/$(PDK_CELL_PREFIX)_udp.v)
 VERILOG_SOURCES += $(PDK_LIBS_REF)/$(PDK_CELL_PREFIX)_stdcell/verilog/$(PDK_CELL_PREFIX)_stdcell.v
+
+# IHP SRAM macro models (only used if the netlist contains the macros)
+VERILOG_SOURCES += $(PWD)/ihp_sram/RM_IHPSG13_1P_512x32_c2_bm_bist.v $(PWD)/ihp_sram/RM_IHPSG13_1P_core_behavioral_bm_bist.v
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v

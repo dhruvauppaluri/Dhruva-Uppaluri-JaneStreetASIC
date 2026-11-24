@@ -35,6 +35,56 @@
   "//": "which cannot be placed in the core: GRT-0010 'instance is not placed')",
   "EXTRA_EXCLUDED_CELLS": ["sg13cmos5l_IOPad*"],
 
+  "//": "================= SETL SRAM build (branch setl-sram) =================",
+  "//": "Two IHP 512x32 SRAM macros form the 512 x 64 record memory (SETL_IHP_SRAM).",
+  "//": "Physical recipe after Ken Pettit's CMOS5L walkthrough (Apache-2.0): macros flush",
+  "//": "left on the SRAM power-column grid, tile stripes on a 44.96 um pitch, and",
+  "//": "Project.ExtendPowerStripes (librelane_plugin_setl_pdn.py) drawing the Metal4",
+  "//": "stripes across the macros' supply columns.",
+  "VERILOG_DEFINES": ["SETL_IHP_SRAM"],
+  "meta": {
+    "flow": "Classic",
+    "substituting_steps": {
+      "+OpenROAD.GeneratePDN": "Project.ExtendPowerStripes",
+      "+OpenROAD.ResizerTimingPostCTS": "Project.DiodesOnSramPins"
+    }
+  },
+  "MACROS": {
+    "RM_IHPSG13_1P_512x32_c2_bm_bist": {
+      "instances": {
+        "mem.g_sram[0].sram": {"location": [3.36, 3.78], "orientation": "FS"},
+        "mem.g_sram[1].sram": {"location": [3.36, 340.2], "orientation": "N"}
+      },
+      "gds": ["pdk_dir::libs.ref/sg13cmos5l_sram/gds/RM_IHPSG13_1P_512x32_c2_bm_bist.gds"],
+      "lef": ["pdk_dir::libs.ref/sg13cmos5l_sram/lef/RM_IHPSG13_1P_512x32_c2_bm_bist.lef"],
+      "spice": ["pdk_dir::libs.ref/sg13cmos5l_sram/cdl/RM_IHPSG13_1P_512x32_c2_bm_bist.cdl"],
+      "lib": {
+        "nom_typ_1p20V_25C": ["pdk_dir::libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_512x32_c2_bm_bist_typ_1p20V_25C.lib"],
+        "nom_fast_1p32V_m40C": ["pdk_dir::libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_512x32_c2_bm_bist_fast_1p32V_m55C.lib"],
+        "nom_slow_1p08V_125C": ["pdk_dir::libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_512x32_c2_bm_bist_slow_1p08V_125C.lib"]
+      }
+    }
+  },
+  "PDN_MACRO_CONNECTIONS": [
+    "mem\\.g_sram\\\\?\\[0\\\\?\\]\\.sram VPWR VGND VDD! VSS!",
+    "mem\\.g_sram\\\\?\\[0\\\\?\\]\\.sram VPWR VGND VDDARRAY! VSS!",
+    "mem\\.g_sram\\\\?\\[1\\\\?\\]\\.sram VPWR VGND VDD! VSS!",
+    "mem\\.g_sram\\\\?\\[1\\\\?\\]\\.sram VPWR VGND VDDARRAY! VSS!"
+  ],
+  "PDN_CFG": "dir::pdn_cfg.tcl",
+  "ERROR_ON_PDN_VIOLATIONS": 0,
+  "ERROR_ON_ILLEGAL_OVERLAPS": 0,
+  "EXTEND_STRIPES_SRAM_ALL_COLUMNS": false,
+  "EXTEND_STRIPES_SRAM_ARRAY_EVERY_OTHER": true,
+  "EXTEND_STRIPES_PIN_FACE_MARGIN": 0,
+  "FP_MACRO_HORIZONTAL_HALO": 2.0,
+  "FP_MACRO_VERTICAL_HALO": 0.48,
+  "ROUTING_OBSTRUCTIONS": ["Metal2 3.36 3.78 420.0 192.5", "Metal2 3.36 342.8 420.0 531.54",
+                           "Metal3 3.36 3.78 420.0 192.5", "Metal3 3.36 342.8 420.0 531.54",
+                           "Metal4 3.36 3.78 420.0 192.5", "Metal4 3.36 342.8 420.0 531.54"],
+  "DIODE_CELL": "sg13cmos5l_antennanp/A",
+  "MAGIC_EXT_ABSTRACT_CELLS": ["RM_IHPSG13_.*"],
+
   "//": "Configuration docs: https://librelane.readthedocs.io/en/latest/reference/configuration.html",
 
   "//": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
@@ -62,7 +112,9 @@
   "FP_IO_HLENGTH": 2,
   "FP_IO_VLENGTH": 2,
 
-  "FP_PDN_VPITCH": 50.0,
+  "FP_PDN_VPITCH": 44.96,
+  "FP_PDN_VOFFSET": 6.15,
+  "FP_PDN_VSPACING": 3.52,
   "FP_PDN_VWIDTH": 2.1,
 
   "//": "Clock",
