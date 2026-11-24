@@ -135,11 +135,13 @@ RESIDUE, CRC; little-endian 16-bit; CRC can be read and written).
   the input bit when `CTRL[2]` is set. `CTRL[3]` selects shift-left (MSB-first
   polynomials); otherwise it shifts right (reflected polynomials, e.g. 0xA001 for
   CRC-16/MODBUS and USB).
-* `CTRL[7:4]` sets the ones-run length (0 = off). The counter counts consecutive 1 bits
-  on the same bit source. `ones` becomes true when the counter reaches the length (6 for
-  USB, 5 for HDLC/CAN).
+* `CTRL[6:4]` sets the run length (0 = off). The counter counts consecutive 1 bits on the
+  same bit source, or with `CTRL[7]` consecutive *identical* bits of either polarity.
+  `ones` becomes true when the counter reaches the length (USB: 6 ones; HDLC: 5 ones;
+  CAN: 5 identical).
 * `ld` with IMM[8] set is a special form: `crc lo` (SR ← CRC[7:0]), `crc hi`,
-  `crc clr` (CRC ← INIT) and `ones clr` (after inserting a stuff bit); `crc nlo` /
+  `crc clr` (CRC ← INIT) and `ones clr` (records an inserted stuff bit of the opposite
+  polarity: it ends a run of 1s, or starts a new run of identical bits); `crc nlo` /
   `crc nhi` load the *complemented* CRC byte and freeze the CRC until the next `crc clr`
   (USB, HDLC/PPP).
 
@@ -165,7 +167,7 @@ The lane *L* registers are at `L*0x10 + r`:
 
 | r | name | |
 |---|------|-|
-| 0 | CTRL | [0] MSB-first shift, [1] CRC on, [2] CRC/ones bit = input, [3] CRC shifts left, [7:4] ones run length |
+| 0 | CTRL | [0] MSB-first shift, [1] CRC on, [2] CRC/run bit = input, [3] CRC shifts left, [6:4] run length, [7] runs of identical bits |
 | 1,2 | START | first state (9 bits) |
 | 3 | DIV | tick divider (DIV+1) |
 | 4,5 / 6,7 | TA / TB | 16-bit timer reload values |

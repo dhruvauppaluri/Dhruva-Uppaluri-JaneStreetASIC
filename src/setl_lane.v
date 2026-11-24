@@ -66,6 +66,7 @@ module setl_lane #(
     reg [15:0] crc;
     reg [3:0]  ones;
     reg        crc_hold;    // set by crc nlo/nhi, cleared by crc clr
+    reg        run_bit;     // polarity of the current run (CTRL[7] mode)
     assign crc_o = crc;
 
     assign pc_o  = pc;
@@ -143,12 +144,20 @@ module setl_lane #(
     wire [15:0] crc_upd  = cfg_ctrl[3] ? ({crc_pre[14:0], 1'b0} ^ (fb_l ? cfg_poly : 16'd0))
                                        : ({1'b0, crc_pre[15:1]} ^ (fb_r ? cfg_poly : 16'd0));
     wire [15:0] crc_n    = (did_sh & cfg_ctrl[1] & ~hold_n) ? crc_upd : crc_pre;
-    wire [3:0]  runlen   = cfg_ctrl[7:4];
-    wire [3:0]  ones_pre = (special & (f_imm[2:0] == 3'd3)) ? 4'd0 : ones;
-    wire [3:0]  ones_n   = (did_sh && runlen != 4'd0) ?
-                               (crc_b ? ((ones_pre == 4'd15) ? 4'd15 : ones_pre + 4'd1) : 4'd0) : ones_pre;
+    // run counter: `ones clr` accounts for an inserted stuff bit of opposite polarity
+    wire [2:0]  runlen   = cfg_ctrl[6:4];
+    wire        any_pol  = cfg_ctrl[7];
+    wire        clr_run  = special & (f_imm[2:0] == 3'd3);
+    wire [3:0]  ones_pre = clr_run ? {3'd0, any_pol} : ones;
+    wire        rb_pre   = clr_run ? ~run_bit : run_bit;
+    wire [3:0]  ones_inc = (ones_pre == 4'd15) ? 4'd15 : ones_pre + 4'd1;
+    wire        new_run  = (ones_pre == 4'd0) | (crc_b != rb_pre);
+    wire [3:0]  ones_n   = !(did_sh && runlen != 3'd0) ? ones_pre :
+                           any_pol ? (new_run ? 4'd1 : ones_inc) :
+                           (crc_b ? ones_inc : 4'd0);
+    wire        rb_n     = (did_sh && runlen != 3'd0 && any_pol && new_run) ? crc_b : rb_pre;
     wire c_crcok = (crc_n == cfg_crc_res);
-    wire c_ones  = (runlen != 4'd0) && (ones_n == runlen);
+    wire c_ones  = (runlen != 3'd0) && (ones_n == {1'b0, runlen});
 
     assign lane_pop  = tick & do_pop;
     assign lane_push = tick & push_ok;
@@ -237,12 +246,12 @@ module setl_lane #(
             pc <= 9'd0; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
             slot_val <= 4'hF; flag <= 1'b0; sw <= 16'd0; crc <= 16'd0; ones <= 4'd0;
-            crc_hold <= 1'b0;
+            crc_hold <= 1'b0; run_bit <= 1'b0;
         end else if (start) begin
             pc <= cfg_start; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
             slot_val <= cfg_outinit; flag <= 1'b0; sw <= 16'd0; ones <= 4'd0;
-            crc_hold <= 1'b0;
+            crc_hold <= 1'b0; run_bit <= 1'b0;
         end else begin
             if (host_oinit_we & ~run) slot_val <= host_wdata[3:0];
             if (rd_me & pending) begin
@@ -253,7 +262,7 @@ module setl_lane #(
             if (tick) begin
                 sr <= sr_n; cnt <= cnt_n; timer <= timer_n;
                 slot_val <= slot_n; flag <= flag_n; last <= cur; sw <= sw_n;
-                crc <= crc_n; ones <= ones_n; crc_hold <= hold_n;
+                crc <= crc_n; ones <= ones_n; crc_hold <= hold_n; run_bit <= rb_n;
                 if (w_ok) begin
                     if (refetch) begin
                         first <= 1'b0; valid <= 1'b0; pending <= 1'b1; pc <= nxt;

@@ -421,3 +421,70 @@ async def usb_ls_capture(h, dp, dm, period, timeout=500000):
     if not by or by[0] != 0x80:
         problems.append(f"bad SYNC {by[:1]}")
     return by[1:], problems
+
+
+async def can_receive(h, tx_uo, rx_ui, period, ack=True, timeout=400000):
+    """Real-time CAN 2.0A receiver on the wired-AND bus RX = TX & (not our ACK).
+    Returns (fields dict, problems).  Drives the ACK slot dominant if `ack`."""
+    clk = h.dut.clk
+    n = 0
+    while True:                                  # wait for SOF (recessive -> dominant)
+        await RisingEdge(clk)
+        n += 1
+        assert n < timeout, "CAN SOF timeout"
+        tx = (int(h.dut.uo_out.value) >> tx_uo) & 1
+        h.set_ui(rx_ui, tx)
+        if not tx:
+            break
+    problems = []
+    bits, raw = [], []
+    run_val, run_len = 0, 0
+    t = 0                                        # clocks since SOF edge
+    prev = 0
+    destuff = True
+    ack_index = None
+    acking = False
+    fields = None
+    while True:
+        await RisingEdge(clk)
+        t += 1
+        tx = (int(h.dut.uo_out.value) >> tx_uo) & 1
+        if tx != prev and t % period and destuff:
+            problems.append(f"transition off the bit grid at {t}")
+        prev = tx
+        h.set_ui(rx_ui, tx & (0 if acking else 1))
+        k, phase = divmod(t, period)
+        if phase == period // 2:                 # sample point
+            b = tx
+            if destuff and run_len == 5:
+                if b == run_val:
+                    problems.append(f"missing stuff bit at raw bit {len(raw)}")
+                run_val, run_len = b, 1
+                raw.append(b)
+                continue
+            raw.append(b)
+            if b == run_val:
+                run_len += 1
+            else:
+                run_val, run_len = b, 1
+            bits.append(b)
+            if len(bits) == 19:                  # header done: frame length known
+                dlc = int("".join(map(str, bits[15:19])), 2)
+                crc_end = 19 + 8 * dlc + 15
+            if len(bits) >= 19 and len(bits) == crc_end:
+                destuff = False                  # CRC delimiter onwards is not stuffed
+                ack_index = k + 2                # delimiter, then the ACK slot
+            if ack_index is not None and fields is None and len(bits) == crc_end:
+                body = bits[:19 + 8 * dlc]
+                fields = {
+                    "sof": bits[0], "id": int("".join(map(str, bits[1:12])), 2),
+                    "rtr": bits[12], "ide": bits[13], "r0": bits[14], "dlc": dlc,
+                    "data": [int("".join(map(str, bits[19 + 8 * i:27 + 8 * i])), 2) for i in range(dlc)],
+                    "crc": int("".join(map(str, bits[19 + 8 * dlc:crc_end])), 2),
+                    "body": body,
+                }
+        if ack_index is not None:
+            acking = ack and k == ack_index
+            if k == ack_index + 9:               # ACK delimiter + EOF seen
+                break
+    return fields, problems

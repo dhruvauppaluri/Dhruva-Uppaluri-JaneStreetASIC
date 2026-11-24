@@ -97,7 +97,7 @@ class Harness:
         # uo[7] is host MISO (SPI shell, not modelled); compare only driven uio bits
         bad = ((muo ^ self.uo) & 0x7F) or moe != self.uio_oe or ((mout ^ self.uio_out) & moe)
         # internal lane state is compared too: divergence is caught at its source
-        names = ("pc", "valid", "pending", "first", "timer", "cnt", "sr", "slot_val", "flag", "sw", "crc", "ones", "crc_hold")
+        names = ("pc", "valid", "pending", "first", "timer", "cnt", "sr", "slot_val", "flag", "sw", "crc", "ones", "crc_hold", "run_bit")
         diff = []
         for i, L in enumerate(m.lanes):
             rl = up.g_lane[i].lane

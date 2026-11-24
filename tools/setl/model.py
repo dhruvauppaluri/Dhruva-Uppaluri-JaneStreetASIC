@@ -36,6 +36,7 @@ class Lane:
         self.crc = 0
         self.crc_hold = 0
         self.ones = 0
+        self.run_bit = 0
         self.start = 0
         self.div = 0
         self.ta = 0
@@ -73,6 +74,7 @@ class Lane:
         self.sw = 0
         self.ones = 0
         self.crc_hold = 0
+        self.run_bit = 0
 
 
 def cond_value(sel, c):
@@ -372,10 +374,22 @@ class Chip:
             else:
                 fb = (crc_n & 1) ^ b
                 crc_n = (crc_n >> 1) ^ (L.poly if fb else 0)
-        runlen = L.ctrl >> 4
-        ones_n = 0 if (special and sp == 3) else L.ones
+        # run counter: `ones clr` accounts for an inserted stuff bit of the
+        # opposite polarity (USB: a 0 ends the run of 1s; CAN: it starts a run of 1)
+        runlen = (L.ctrl >> 4) & 7
+        any_pol = (L.ctrl >> 7) & 1
+        if special and sp == 3:
+            ones_n, rb_n = (1 if any_pol else 0), 1 - L.run_bit
+        else:
+            ones_n, rb_n = L.ones, L.run_bit
         if did_shift and runlen:
-            ones_n = min(ones_n + 1, 15) if b else 0
+            if any_pol:
+                if ones_n == 0 or b != rb_n:
+                    ones_n, rb_n = 1, b
+                else:
+                    ones_n = min(ones_n + 1, 15)
+            else:
+                ones_n = min(ones_n + 1, 15) if b else 0
 
         cnt_n = L.cnt
         if act:
@@ -447,7 +461,7 @@ class Chip:
             u["_tb"] = (L.sw + (L.sw >> 1)) & 0xFFFF
 
         u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur, sw=sw_n,
-                 crc=crc_n, ones=ones_n, crc_hold=hold_n)
+                 crc=crc_n, ones=ones_n, crc_hold=hold_n, run_bit=rb_n)
         if pop:
             u["_pop"] = True
         if push_req and not push_ok:

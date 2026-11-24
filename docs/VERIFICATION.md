@@ -40,6 +40,7 @@ protocols from their specifications:
 | `test_modbus_crc` | MODBUS RTU on three lanes: lane 0 appends CRC-16 on chip (matches the standard `01 03 00 00 00 0A → C5 CD` vector), lane 1 receives over the on-chip readback and checks the CRC, lane 2 flags a corrupted frame |
 | `test_usb_ls_tx` | USB low-speed DATA0 (with forced bit stuffing), ACK handshake, and empty DATA1. An independent decoder does NRZI, un-stuffing, SYNC, PID, CRC-16 and EOP, and asserts that **every transition lies exactly on the bit grid** (512-word memory only) |
 | `test_usb_ls_loopback` | USB LS TX lane → RX lane through the on-chip readback: clock recovery, NRZI, un-stuffing, CRC check; data packets and a handshake (512-word memory only) |
+| `test_can_tx` | CAN 2.0A frames at 500 kbit/s against a real-time receiver that de-stuffs, checks the bit grid and the CRC-15, and drives the ACK slot; stuffing in the ID and data fields; a frame with no ACK raises the host event (512-word memory only) |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are
