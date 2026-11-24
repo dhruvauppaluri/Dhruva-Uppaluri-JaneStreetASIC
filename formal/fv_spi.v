@@ -49,15 +49,15 @@ module fv_spi #(parameter [15:0] TA = 16'd0) (
         if (did_pop) begin exp <= popped; bitn <= 4'd0; end
         else if (rise) bitn <= bitn + 4'd1;
         if (rise && !first_byte_done) rxbits <= {rxbits[6:0], miso_q};
-        if (rx_level != 3'd0) first_byte_done <= 1'b1;
+        if (rx_level != 5'd0) first_byte_done <= 1'b1;
     end
     // the first byte pushed to RX is exactly the MISO bits seen at the 8 rising edges
-    always @(posedge clk) if (started && $past(started) && $past(rx_level) == 3'd0 && rx_level == 3'd1)
+    always @(posedge clk) if (started && $past(started) && $past(rx_level) == 5'd0 && rx_level == 5'd1)
         assert(rx_head == rxbits);
 `ifdef REACH
     // reachability: a received byte, then CS released after a multi-byte frame
     reg got = 1'b0;
     always @(posedge clk) if (first_byte_done && did_pop) got <= 1'b1;
-    always @(*) assert(!(got && cs && rx_level == 3'd2));
+    always @(*) assert(!(got && cs && rx_level == 5'd2));
 `endif
 endmodule

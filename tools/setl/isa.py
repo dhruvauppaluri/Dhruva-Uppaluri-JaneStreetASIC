@@ -104,11 +104,17 @@ G_ID = 0x82
 G_VERSION = 0x83
 G_EVENTS = 0x84      # [3:0] events, [7:4] flags
 G_HFLAG = 0x85
-G_STATUS = 0x88      # +lane: [2:0] tx level, [5:3] rx level, [6] event, [7] overflow; write 1s to clear 6/7
+G_HOSTERR = 0x86     # sticky, write 1s to clear: [0] host memory request lost
+                     # (lanes kept the memory busy), [1] host read data late,
+                     # [2] (live) a host memory request is still waiting
+G_STATUS = 0x88      # +lane: [2:0] tx level, [5:3] rx level (both saturate at 7), [6] event,
+                     # [7] overflow; write 1s to clear 6/7.  Full levels: G_LEVEL
 G_PC = 0x8C          # +lane: pc[7:0]
 G_SR = 0x90          # +lane
 G_CNT = 0x94         # +lane
 G_PCHI = 0x98        # [3:0] pc[8] per lane
+G_LEVEL = 0xC0       # +2*lane: [4:0] TX level, [6] event, [7] overflow; +1: [4:0] RX level
+FIFO_DEPTH = 16
 G_CRC = 0xA0         # +8*lane: POLY lo/hi, INIT lo/hi, RES lo/hi, CRC lo/hi (CRC is read/write)
 
 # `ld` with IMM[8] set is a special form (the SR load from IMM[7:0] is replaced):
@@ -120,10 +126,13 @@ LD_CRC_NLO, LD_CRC_NHI = 0x104, 0x105
 CHIP_ID = 0x5E
 CHIP_VERSION = 0x01
 
-# OMAP byte: [4:0] pin (0-6 uo0-6, 8-15 uio0-7, else unmapped), [5] open-drain, [6] invert
+# OMAP byte: [4:0] pin (0-6 uo0-6, 8-15 uio0-7, else unmapped), [5] open-drain, [6] invert,
+# [7] tri-state (uio pins only): the slot drives the data, the lane's next slot
+# (k+1 mod 4, uninverted) is the output enable -- e.g. SPI MISO released while CS is high
 OMAP_NONE = 0x1F
 OMAP_OD = 0x20
 OMAP_INV = 0x40
+OMAP_OE = 0x80
 
 
 def omap_pin(name: str) -> int:

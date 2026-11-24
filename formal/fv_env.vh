@@ -24,7 +24,7 @@
     end
 
     wire [7:0] rx_head, sr_o, cnt_o;
-    wire [2:0] tx_level, rx_level;
+    wire [4:0] tx_level, rx_level;
     wire [3:0] slot_val;
     wire [8:0] pc_o;
     wire       flag, event_set, ovf_set, ta_we, tb_we;
@@ -48,13 +48,15 @@
 
     // the host never overfills the TX FIFO (the driver checks the level) and
     // is quiet while the chip is in reset
-    always @(*) assume(!(host_push && tx_level == 3'd4));
+    // the shadow below models four queued bytes: the proofs cover hosts that keep
+    // at most four bytes in the (16-deep) TX FIFO
+    always @(*) assume(!(host_push && tx_level >= 5'd4));
     always @(*) if (init) assume(!host_push && !host_pop);
 
     // Shadow of the TX FIFO, one clock behind: pushes are seen from the host
     // inputs, pops are inferred from the level.  The shadow must always agree
     // with the real level, and `popped` is the byte the lane just took.
-    reg  [2:0] p_lvl = 3'd0;
+    reg  [4:0] p_lvl = 5'd0;
     reg        p_push = 1'b0;
     reg  [7:0] p_wd;
     reg  [7:0] sq0, sq1, sq2, sq3;
@@ -62,7 +64,7 @@
     always @(posedge clk) begin
         p_lvl <= tx_level; p_push <= host_push; p_wd <= host_wdata;
     end
-    wire did_pop = started && ({1'b0, p_lvl} + {3'd0, p_push} - {1'b0, tx_level} == 4'd1);
+    wire did_pop = started && ({1'b0, p_lvl} + {5'd0, p_push} - {1'b0, tx_level} == 6'd1);
     wire [7:0] popped = sq0;
     always @(posedge clk) if (rst_n) begin
         if (did_pop) begin
@@ -86,6 +88,6 @@
             scount <= scount + 3'd1;
         end
     end
-    always @(posedge clk) if (started && $past(started)) assert(scount == p_lvl);   // shadow lags the FIFO by one clock
+    always @(posedge clk) if (started && $past(started)) assert({2'd0, scount} == p_lvl);   // shadow lags the FIFO by one clock
     // guard against harness wiring mistakes: the input vector constants are in place
     always @(*) assert(in_vec[31] && !in_vec[30]);

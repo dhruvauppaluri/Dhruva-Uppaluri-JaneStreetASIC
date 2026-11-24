@@ -1,5 +1,5 @@
 /*
- * 4-entry byte FIFO. A push when full is dropped unless a pop happens in the
+ * 16-entry byte FIFO. A push when full is dropped unless a pop happens in the
  * same cycle. A pop when empty does nothing.
  * SPDX-License-Identifier: MIT
  */
@@ -12,21 +12,21 @@ module setl_fifo (
     input  wire [7:0] wdata,
     input  wire       pop,
     output wire [7:0] head,
-    output reg  [2:0] level
+    output reg  [4:0] level
 );
-    reg [7:0] mem [0:3];
-    reg [1:0] rp, wp;
-    wire do_pop  = pop & (level != 3'd0);
-    wire do_push = push & ((level != 3'd4) | do_pop);
+    reg [7:0] mem [0:15];
+    reg [3:0] rp, wp;
+    wire do_pop  = pop & (level != 5'd0);
+    wire do_push = push & ((level != 5'd16) | do_pop);
     assign head = mem[rp];
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            rp <= 2'd0; wp <= 2'd0; level <= 3'd0;
+            rp <= 4'd0; wp <= 4'd0; level <= 5'd0;
         end else begin
-            if (do_pop) rp <= rp + 2'd1;
-            if (do_push) wp <= wp + 2'd1;
-            level <= level + {2'd0, do_push} - {2'd0, do_pop};
+            if (do_pop) rp <= rp + 4'd1;
+            if (do_push) wp <= wp + 4'd1;
+            level <= level + {4'd0, do_push} - {4'd0, do_pop};
         end
     end
 

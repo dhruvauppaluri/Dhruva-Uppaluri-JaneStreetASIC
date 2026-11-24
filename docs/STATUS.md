@@ -8,10 +8,20 @@
 | Executable spec | `tools/setl/model.py`, cycle-accurate |
 | Toolchain | assembler (images, `$readmemh`, Verilog ROMs), host driver, learning and impersonation (`learn.py`), JTAG helper |
 | Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; SWD; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX and RX with clock recovery, CAN 2.0A TX (generated) |
-| Directed tests | 19 (RTL, 512-word memory) / 15 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
+| Directed tests | 22 (RTL, 512-word memory) / 18 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
 | Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
 | Formal | unbounded proof that the barrel never stalls a lane (whole chip, any program, any host traffic); bounded proofs of the UART / SPI / I²C programs on the lane RTL; reachability checks for each; also in CI |
 | Lint | Verilator `-Wall` clean |
+
+## Review fixes (after the first green build)
+
+| issue raised | fix | evidence |
+|---|---|---|
+| a program write into a running chip could be lost silently | lost writes and late reads set HOSTERR (0x86); `load_image()` raises `HostError` | `test_host_write_while_lanes_busy`, `test_host_single_byte_while_lanes_busy` |
+| the I²C capture depended on phase and on a fast host | FIFOs 4 → 16 deep, with full level registers (0xC0+2L); an SCL/SDA sampling race fixed in the I²C programs | `test_learn_and_impersonate` sweep |
+| impersonation was only checked on its training traffic | held-out session from a second, independently timed controller, against answers recorded from the real sensor | [DEMO.md](DEMO.md) |
+| the SPI target could not share MISO | tri-state OMAP mode (bit 7: the next slot is the enable) | `test_spi_target_shared_bus` |
+| the USB rate claim | the docs now say 0.83 Mb/s at the 33 MHz sign-off; 1.5 Mb/s needs 48/60 MHz | [WRITEUP.md](WRITEUP.md) limitations |
 
 ## Physical design
 
@@ -69,7 +79,9 @@ more than five hours in CI and was stopped once the SRAM build was green.
 
 ## Known limitations
 
-* The FIFOs are 4 deep. Fast protocols need a responsive host, as the MODBUS test shows.
+* The FIFOs are 16 deep (8 captured I²C bytes between host services).
 * The shift register, FIFOs and counter are 8 bits wide.
-* Host memory writes while lanes run use spare slots only.
+* Host memory writes while lanes run use free clocks only. A write that finds none is
+  reported (HOSTERR, `HostError`), never lost silently.
+* USB low-speed at 1.5 Mb/s needs 48/60 MHz; the build signs off at 33 MHz (0.83 Mb/s).
 * 10BASE-T needs 50 ns events: 40 MHz with 2 lanes, or a serializer.

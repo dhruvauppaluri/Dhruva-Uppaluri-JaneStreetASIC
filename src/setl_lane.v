@@ -42,8 +42,8 @@ module setl_lane #(
     input  wire        host_pop,
     input  wire        host_oinit_we,   // OUTINIT written: a stopped lane takes it at once
     output wire [7:0]  rx_head,
-    output wire [2:0]  tx_level,
-    output wire [2:0]  rx_level,
+    output wire [4:0]  tx_level,
+    output wire [4:0]  rx_level,
     // results
     output reg  [3:0]  slot_val,
     output reg         flag,
@@ -117,10 +117,10 @@ module setl_lane #(
     wire cur = in_vec[f_isel];
 
     // SR pipeline: load -> out bit -> shift
-    wire tx_avail = (tx_level != 3'd0);
+    wire tx_avail = (tx_level != 5'd0);
     wire do_pop   = act & (f_fifo == 2'd1) & tx_avail;
     wire push_req = act & (f_fifo == 2'd2);
-    wire push_ok  = push_req & (rx_level != 3'd4);
+    wire push_ok  = push_req & (rx_level != 5'd16);
     wire ld      = act & (f_fifo == 2'd3);
     wire special = ld & f_imm[8];
     wire [7:0] sr0 = do_pop ? tx_head :
@@ -205,8 +205,8 @@ module setl_lane #(
     // ---- conditions (post-action values) ----
     wire c_timer0 = (timer_n == 16'd0);
     wire c_cnt0   = (cnt_n == 8'd0);
-    wire c_txrdy  = ((tx_level - {2'd0, do_pop}) != 3'd0);
-    wire c_rxfull = ((rx_level + {2'd0, push_ok}) == 3'd4);
+    wire c_txrdy  = ((tx_level - {4'd0, do_pop}) != 5'd0);
+    wire c_rxfull = ((rx_level + {4'd0, push_ok}) == 5'd16);
     wire c_rise   = ~first & ~last & cur;
     wire c_fall   = ~first & last & ~cur;
     wire c_match  = (((sr_n ^ cfg_match) & cfg_mask) == 8'd0);

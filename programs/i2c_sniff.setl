@@ -17,9 +17,11 @@ s_byte:   cnt=8 in scl wait !pin                          goto b_bit
 b_bit:    in scl wait pin                                 goto b_samp
 b_samp:   in sda shift dec                                if pin goto b_h1 else b_h0
 b_h1:     in scl                                          if !pin goto b_low else b_h1s
-b_h1s:    in sda                                          if !pin goto s_start else b_h1
+b_h1s:    in sda                                          if !pin goto b_c1 else b_h1
+b_c1:     in scl                                          if pin goto s_start else b_low   ; SCL still high: a real START
 b_h0:     in scl                                          if !pin goto b_low else b_h0s
-b_h0s:    in sda                                          if pin goto s_stop else b_h0
+b_h0s:    in sda                                          if pin goto b_c0 else b_h0
+b_c0:     in scl                                          if pin goto s_stop else b_low   ; SCL still high: a real STOP
 b_low:                                                    if cnt0 goto k_bit else b_bit
 k_bit:    push in scl wait pin                            goto k_samp      ; the byte
 k_samp:   in sda                                          if pin goto k_n else k_a

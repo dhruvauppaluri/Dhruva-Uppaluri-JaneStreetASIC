@@ -27,7 +27,7 @@ the RTL is checked against it every cycle (see `VERIFICATION.md`).
    └──────────────────────────────────────────────  SR, FIFOs ──────┘
          │ 4 output slots per lane          ▲ 32-entry input vector
          ▼                                  │ (pins, outputs, lane flags)
-   OMAP pin router (push-pull / open-drain / invert) ──► uo[6:0], uio[7:0]
+   OMAP pin router (push-pull / open-drain / tri-state / invert) ──► uo[6:0], uio[7:0]
 ```
 
 ## Lanes and timing
@@ -122,8 +122,12 @@ So `timer=N … wait timer` makes the state last N+1 ticks. Without a wait, a st
 
 Each lane drives 4 **output slots**. The per-lane `OMAP` registers route each slot to a pin
 (`uo0-6` or `uio0-7`). Each mapping can be **open-drain** (0 drives low, 1 releases) and/or
-**inverted**. SPI CPOL is just an inverted SCK mapping. If several slots map to the same pin,
-their values are OR-ed.
+**inverted**. SPI CPOL is just an inverted SCK mapping. A `uio` mapping can also be
+**tri-state** (OMAP bit 7): the slot drives the data and the lane's next slot (k+1 mod 4)
+is the output enable. `programs/spi_target.setl` uses this to release MISO whenever CS is
+high, so the target can share a MISO line with other devices. The `uo` pins have no
+output enable in Tiny Tapeout, so a signal that must be released has to use a `uio` pin.
+If several slots map to the same pin, their values (and enables) are OR-ed.
 
 ### CRC / LFSR and bit-stuffing assist
 
@@ -154,6 +158,16 @@ unit ends with the CRC at the residue: `crcok` (`programs/modbus_tx.setl` /
 
 The host interface is an SPI target (mode 0, MSB first, SCK ≤ clk/16) on `ui7`/`ui6`/`ui5`/`uo7`.
 
+Each lane has a 16-entry TX FIFO and a 16-entry RX FIFO.
+
+Program memory is single-ported and the lanes come first: a host memory access uses a
+clock in which no lane fetches. While every lane is changing state on every tick there is
+no such clock. A memory write that cannot be placed before the next byte arrives is
+**dropped and reported**: HOSTERR[0] is set and `Setl.load_image()` raises `HostError`.
+A read byte that is not ready in time sets HOSTERR[1]. Stop the lanes (`RUN = 0`) to
+reprogram them reliably; writes into a running program work only when the lanes leave
+free clocks (`test_host_write_while_lanes_busy`).
+
 | byte 0 | then |
 |--------|------|
 | `0x00` WREG (`|0x20` no auto-increment) | reg address, data… |
@@ -171,7 +185,7 @@ The lane *L* registers are at `L*0x10 + r`:
 | 1,2 | START | first state (9 bits) |
 | 3 | DIV | tick divider (DIV+1) |
 | 4,5 / 6,7 | TA / TB | 16-bit timer reload values |
-| 8–B | OMAP0–3 | [4:0] pin (0–6 uo, 8–15 uio, other = none), [5] open-drain, [6] invert |
+| 8–B | OMAP0–3 | [4:0] pin (0–6 uo, 8–15 uio, other = none), [5] open-drain, [6] invert, [7] tri-state (uio only; enable = next slot) |
 | C | OUTINIT | slot values loaded at start |
 | D,E | MATCH, MASK | for the `match` condition |
 | F | FIFO | write: push TX. Read: pop RX (popped only when the host clocks the byte) |
@@ -185,7 +199,10 @@ Global registers:
 | 0x82/83 | ID / VERSION | 0x5E / 0x01 |
 | 0x84 | EVENTS | [3:0] events, [7:4] lane flags |
 | 0x85 | HFLAG | host flags (`hflag` condition) |
-| 0x88+L | STATUS | [2:0] TX level, [5:3] RX level, [6] event, [7] overflow; writing 1s clears [7:6] |
+| 0x86 | HOSTERR | [0] a program-memory write was lost, [1] a memory read byte came too late, [2] a memory access is still pending; writing 1s clears [1:0] |
+| 0x88+L | STATUS | [2:0] TX level, [5:3] RX level (both saturate at 7), [6] event, [7] overflow; writing 1s clears [7:6] |
+| 0xC0+2L | LEVEL | [4:0] TX level (0–16), [6] event, [7] overflow |
+| 0xC1+2L | RXLEVEL | [4:0] RX level (0–16) |
 | 0x8C+L / 0x90+L / 0x94+L / 0x98 | PC / SR / CNT / PC[8] | debug |
 | 0xA0+8L … +7 | POLY, INIT, RESIDUE, CRC | CRC unit (16-bit little-endian; CRC is read/write) |
 

@@ -188,13 +188,15 @@ class I2cTarget:
 class I2cController:
     """Bit-banged open-drain I2C controller driving the uio bus (ext bits)."""
 
-    def __init__(self, h, scl, sda, half, who=None):
+    def __init__(self, h, scl, sda, half, who=None, jitter=0, rng=None):
         self.h, self.scl, self.sda, self.half = h, scl, sda, half
         self.who = who
+        self.jitter, self.rng = jitter, rng   # each phase lasts half + U(0, jitter) clocks
         self.stretched = 0      # clocks a target held SCL low
 
     async def _w(self):
-        await ClockCycles(self.h.dut.clk, self.half)
+        extra = self.rng.randint(0, self.jitter) if self.jitter else 0
+        await ClockCycles(self.h.dut.clk, self.half + extra)
 
     async def start(self):
         h = self.h

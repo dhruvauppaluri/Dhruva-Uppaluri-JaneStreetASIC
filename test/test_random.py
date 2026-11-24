@@ -44,7 +44,8 @@ def rand_omap(rng):
     if rng.random() < 0.2:
         return isa.OMAP_NONE
     pin = rng.choice(list(range(7)) + list(range(8, 16)))
-    return pin | (isa.OMAP_OD if rng.random() < 0.3 else 0) | (isa.OMAP_INV if rng.random() < 0.2 else 0)
+    return (pin | (isa.OMAP_OD if rng.random() < 0.3 else 0) | (isa.OMAP_INV if rng.random() < 0.2 else 0)
+            | (isa.OMAP_OE if rng.random() < 0.2 else 0))
 
 
 async def run_seed(dut, seed):

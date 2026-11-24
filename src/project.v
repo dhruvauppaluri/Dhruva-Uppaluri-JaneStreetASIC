@@ -45,7 +45,7 @@ module tt_um_dhruvauppaluri_setl (
     reg [7:0]  c_div   [0:NL-1];
     reg [15:0] c_ta    [0:NL-1];
     reg [15:0] c_tb    [0:NL-1];
-    reg [6:0]  c_omap  [0:4*NL-1];
+    reg [7:0]  c_omap  [0:4*NL-1];
     reg [3:0]  c_oinit [0:NL-1];
     reg [7:0]  c_match [0:NL-1];
     reg [7:0]  c_mask  [0:NL-1];
@@ -60,6 +60,7 @@ module tt_um_dhruvauppaluri_setl (
     wire       hmem_gnt;
     reg        hmem_rvalid;
     wire       miso;
+    wire       hmem_lost, hrd_late;
     wire [63:0] mem_rdata;
 
     setl_host host (
@@ -69,15 +70,17 @@ module tt_um_dhruvauppaluri_setl (
         .reg_raddr(reg_raddr), .reg_rdata(reg_rdata), .reg_rside(reg_rside),
         .reg_commit(reg_commit), .reg_caddr(reg_caddr),
         .mem_req(hmem_req), .mem_we(hmem_we), .mem_baddr(hmem_baddr), .mem_wbyte(hmem_wbyte),
-        .mem_gnt(hmem_gnt), .mem_rvalid(hmem_rvalid), .mem_rdata(mem_rdata)
+        .mem_gnt(hmem_gnt), .mem_rvalid(hmem_rvalid), .mem_rdata(mem_rdata),
+        .mem_lost(hmem_lost), .rd_late(hrd_late)
     );
+    reg [1:0] hosterr;      // sticky: [0] a memory write/read request was lost, [1] read data late
 
     // ------------------------------------------------------- lanes
     wire [4*NL-1:0] slot_val_v;
     wire [NL-1:0] flag, ev_set, ovf_set, fetch_req;
     wire [9*NL-1:0] fetch_addr_v, pc_v;
     wire [8*NL-1:0] rx_head_v, sr_v, cnt_v;
-    wire [3*NL-1:0] tx_level_v, rx_level_v;
+    wire [5*NL-1:0] tx_level_v, rx_level_v;
     wire [NL-1:0] ta_we, tb_we;
     wire [16*NL-1:0] crc_v;
     wire [16*NL-1:0] t_wdata_v;
@@ -109,8 +112,8 @@ module tt_um_dhruvauppaluri_setl (
                 .host_push(reg_we && reg_waddr == (i * 16 + 15)), .host_wdata(reg_wdata),
                 .host_pop(reg_commit && reg_caddr == (i * 16 + 15)),
                 .host_oinit_we(reg_we && reg_waddr == (i * 16 + 12)),
-                .rx_head(rx_head_v[8*i +: 8]), .tx_level(tx_level_v[3*i +: 3]),
-                .rx_level(rx_level_v[3*i +: 3]),
+                .rx_head(rx_head_v[8*i +: 8]), .tx_level(tx_level_v[5*i +: 5]),
+                .rx_level(rx_level_v[5*i +: 5]),
                 .slot_val(slot_val_v[4*i +: 4]), .flag(flag[i]),
                 .event_set(ev_set[i]), .ovf_set(ovf_set[i]),
                 .pc_o(pc_v[9*i +: 9]), .sr_o(sr_v[8*i +: 8]), .cnt_o(cnt_v[8*i +: 8]),
@@ -148,7 +151,7 @@ module tt_um_dhruvauppaluri_setl (
     integer k;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            mode4 <= 1'b0; run <= 4'd0; hflag <= 4'd0; slot <= 2'd0;
+            mode4 <= 1'b0; run <= 4'd0; hflag <= 4'd0; slot <= 2'd0; hosterr <= 2'd0;
             ev <= 4'd0; ovf <= 4'd0;
             for (k = 0; k < NL; k = k + 1) begin
                 c_ctrl[k] <= 8'd0; c_start[k] <= 9'd0; c_div[k] <= 8'd0;
@@ -156,10 +159,11 @@ module tt_um_dhruvauppaluri_setl (
                 c_ta[k] <= 16'd0; c_tb[k] <= 16'd0; c_oinit[k] <= 4'hF;
                 c_match[k] <= 8'd0; c_mask[k] <= 8'd0;
             end
-            for (k = 0; k < 4 * NL; k = k + 1) c_omap[k] <= 7'h1F;
+            for (k = 0; k < 4 * NL; k = k + 1) c_omap[k] <= 8'h1F;
         end else begin
             slot <= mode4 ? slot + 2'd1 : {1'b0, ~slot[0]};
             ev  <= ev | ev_set;
+            hosterr <= hosterr | {hrd_late, hmem_lost};
             ovf <= ovf | ovf_set;
             if (reg_we) begin
                 if (reg_waddr < 8'h40) begin
@@ -173,7 +177,7 @@ module tt_um_dhruvauppaluri_setl (
                         4'h6: c_tb[reg_waddr[5:4]][7:0] <= reg_wdata;
                         4'h7: c_tb[reg_waddr[5:4]][15:8] <= reg_wdata;
                         4'h8, 4'h9, 4'hA, 4'hB:
-                              c_omap[{reg_waddr[5:4], reg_waddr[1:0]}] <= reg_wdata[6:0];
+                              c_omap[{reg_waddr[5:4], reg_waddr[1:0]}] <= reg_wdata;
                         4'hC: c_oinit[reg_waddr[5:4]] <= reg_wdata[3:0];
                         4'hD: c_match[reg_waddr[5:4]] <= reg_wdata;
                         4'hE: c_mask[reg_waddr[5:4]] <= reg_wdata;
@@ -184,6 +188,7 @@ module tt_um_dhruvauppaluri_setl (
                         8'h80: mode4 <= reg_wdata[0];
                         8'h81: run <= reg_wdata[3:0];
                         8'h85: hflag <= reg_wdata[3:0];
+                        8'h86: hosterr <= (hosterr & ~reg_wdata[1:0]) | {hrd_late, hmem_lost};
                         8'hA0, 8'hA8, 8'hB0, 8'hB8: c_poly[reg_waddr[4:3]][7:0]   <= reg_wdata;
                         8'hA1, 8'hA9, 8'hB1, 8'hB9: c_poly[reg_waddr[4:3]][15:8]  <= reg_wdata;
                         8'hA2, 8'hAA, 8'hB2, 8'hBA: c_cinit[reg_waddr[4:3]][7:0]  <= reg_wdata;
@@ -205,10 +210,15 @@ module tt_um_dhruvauppaluri_setl (
         end
     end
 
+    function [2:0] sat7;
+        input [4:0] lv;
+        sat7 = (lv > 5'd7) ? 3'd7 : lv[2:0];
+    endfunction
+
     // register read mux
     wire [1:0] rl = reg_raddr[5:4];
     wire [1:0] gl = reg_raddr[1:0];
-    assign reg_rside = (reg_raddr < 8'h40) && (reg_raddr[3:0] == 4'hF) && (rx_level_v[3*rl +: 3] != 3'd0);
+    assign reg_rside = (reg_raddr < 8'h40) && (reg_raddr[3:0] == 4'hF) && (rx_level_v[5*rl +: 5] != 5'd0);
     always @(*) begin
         reg_rdata = 8'h00;
         if (reg_raddr < 8'h40) begin
@@ -221,11 +231,11 @@ module tt_um_dhruvauppaluri_setl (
                 4'h5: reg_rdata = c_ta[rl][15:8];
                 4'h6: reg_rdata = c_tb[rl][7:0];
                 4'h7: reg_rdata = c_tb[rl][15:8];
-                4'h8, 4'h9, 4'hA, 4'hB: reg_rdata = {1'b0, c_omap[{rl, reg_raddr[1:0]}]};
+                4'h8, 4'h9, 4'hA, 4'hB: reg_rdata = c_omap[{rl, reg_raddr[1:0]}];
                 4'hC: reg_rdata = {4'd0, c_oinit[rl]};
                 4'hD: reg_rdata = c_match[rl];
                 4'hE: reg_rdata = c_mask[rl];
-                4'hF: reg_rdata = (rx_level_v[3*rl +: 3] != 3'd0) ? rx_head_v[8*rl +: 8] : 8'h00;
+                4'hF: reg_rdata = (rx_level_v[5*rl +: 5] != 5'd0) ? rx_head_v[8*rl +: 8] : 8'h00;
             endcase
         end else begin
             case (reg_raddr)
@@ -235,8 +245,13 @@ module tt_um_dhruvauppaluri_setl (
                 8'h83: reg_rdata = 8'h01;
                 8'h84: reg_rdata = {flag, ev};
                 8'h85: reg_rdata = {4'd0, hflag};
+                8'h86: reg_rdata = {5'd0, hmem_req, hosterr};   // [2] live: request still waiting
                 8'h88, 8'h89, 8'h8A, 8'h8B:
-                       reg_rdata = {ovf[gl], ev[gl], rx_level_v[3*gl +: 3], tx_level_v[3*gl +: 3]};
+                       reg_rdata = {ovf[gl], ev[gl], sat7(rx_level_v[5*gl +: 5]), sat7(tx_level_v[5*gl +: 5])};
+                8'hC0, 8'hC2, 8'hC4, 8'hC6:
+                       reg_rdata = {ovf[reg_raddr[2:1]], ev[reg_raddr[2:1]], 1'b0, tx_level_v[5*reg_raddr[2:1] +: 5]};
+                8'hC1, 8'hC3, 8'hC5, 8'hC7:
+                       reg_rdata = {3'd0, rx_level_v[5*reg_raddr[2:1] +: 5]};
                 8'h8C, 8'h8D, 8'h8E, 8'h8F: reg_rdata = pc_v[9*gl +: 8];
                 8'h90, 8'h91, 8'h92, 8'h93: reg_rdata = sr_v[8*gl +: 8];
                 8'h94, 8'h95, 8'h96, 8'h97: reg_rdata = cnt_v[8*gl +: 8];
@@ -262,14 +277,18 @@ module tt_um_dhruvauppaluri_setl (
         uo_r = 7'd0; uio_o = 8'd0; uio_e = 8'd0;
         for (l = 0; l < NL; l = l + 1)
             for (s = 0; s < 4; s = s + 1) begin : pinmux
-                reg [6:0] m;
+                reg [7:0] m;
                 reg v;
                 m = c_omap[l * 4 + s];
                 v = slot_val_v[l * 4 + s] ^ m[6];
                 if (m[4:0] <= 5'd6)
                     uo_r[m[2:0]] = uo_r[m[2:0]] | v;
                 else if (m[4:3] == 2'b01) begin
-                    if (m[5]) uio_e[m[2:0]] = uio_e[m[2:0]] | ~v;
+                    if (m[7]) begin
+                        // tri-state: the next slot of the same lane is the output enable
+                        uio_o[m[2:0]] = uio_o[m[2:0]] | v;
+                        uio_e[m[2:0]] = uio_e[m[2:0]] | slot_val_v[l * 4 + ((s + 1) % 4)];
+                    end else if (m[5]) uio_e[m[2:0]] = uio_e[m[2:0]] | ~v;
                     else begin
                         uio_o[m[2:0]] = uio_o[m[2:0]] | v;
                         uio_e[m[2:0]] = 1'b1;

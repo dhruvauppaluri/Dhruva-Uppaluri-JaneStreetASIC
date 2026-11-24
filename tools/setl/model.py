@@ -14,7 +14,7 @@ from . import isa
 
 
 class Fifo:
-    DEPTH = 4
+    DEPTH = 16
 
     def __init__(self):
         self.q = []
@@ -155,7 +155,7 @@ class Chip:
             elif r == isa.R_TB_HI:
                 L.tb = (L.tb & 0xFF) | (val << 8)
             elif isa.R_OMAP0 <= r < isa.R_OMAP0 + 4:
-                L.omap[r - isa.R_OMAP0] = val & 0x7F
+                L.omap[r - isa.R_OMAP0] = val & 0xFF
             elif r == isa.R_OUTINIT:
                 L.outinit = val & 0xF
                 if not (self.run >> L.idx) & 1:   # a stopped lane drives it at once
@@ -206,7 +206,10 @@ class Chip:
                     uo |= v << pin
                 elif 8 <= pin <= 15:
                     b = pin - 8
-                    if od:
+                    if m & isa.OMAP_OE:     # tri-state: slot k+1 enables the driver
+                        uio_out |= v << b
+                        uio_oe |= ((L.slot_val >> ((k + 1) % 4)) & 1) << b
+                    elif od:
                         uio_oe |= (1 - v) << b
                     else:
                         uio_out |= v << b

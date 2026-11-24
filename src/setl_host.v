@@ -38,7 +38,12 @@ module setl_host (
     output reg  [7:0]  mem_wbyte,
     input  wire        mem_gnt,
     input  wire        mem_rvalid,
-    input  wire [63:0] mem_rdata
+    input  wire [63:0] mem_rdata,
+    // errors the host must see: a memory request overwritten before the
+    // arbiter granted it (lanes kept the memory busy), and read data that was
+    // not back in time for its byte
+    output reg         mem_lost,
+    output reg         rd_late
 );
     reg       sck_d;
     reg [2:0] bitcnt;
@@ -71,9 +76,11 @@ module setl_host (
             bidx <= 2'd0; cmd <= 8'd0; addr <= 12'd0; pend_side <= 1'b0; side_addr <= 8'd0;
             reg_we <= 1'b0; reg_waddr <= 8'd0; reg_wdata <= 8'd0; reg_commit <= 1'b0; reg_caddr <= 8'd0;
             mem_req <= 1'b0; mem_we <= 1'b0; mem_baddr <= 12'd0; mem_wbyte <= 8'd0;
-            rd_wait <= 1'b0; rd_byte <= 3'd0;
+            rd_wait <= 1'b0; rd_byte <= 3'd0; mem_lost <= 1'b0; rd_late <= 1'b0;
         end else begin
             sck_d <= sck;
+            mem_lost <= 1'b0;
+            rd_late <= 1'b0;
             reg_we <= 1'b0;
             reg_commit <= 1'b0;
             if (mem_gnt) mem_req <= 1'b0;
@@ -85,6 +92,7 @@ module setl_host (
                 bitcnt <= 3'd0; bidx <= 2'd0; pend_side <= 1'b0; tx_sh <= 8'd0;
             end else begin
                 if (fall) tx_sh <= (bitcnt == 3'd0) ? resp : {tx_sh[6:0], 1'b0};
+                if (fall && bitcnt == 3'd0 && rd_wait && !mem_rvalid) rd_late <= 1'b1;
                 if (rise) begin
                     rx_sh <= b[6:0];
                     bitcnt <= bitcnt + 3'd1;
@@ -116,9 +124,11 @@ module setl_host (
                             end else if (op == 2'b10 && bidx == 2'd2) begin
                                 addr[7:0] <= b;                // WMEM address low
                             end else if (op == 2'b10) begin    // WMEM data
+                                if (mem_req && !mem_gnt) mem_lost <= 1'b1;
                                 mem_req <= 1'b1; mem_we <= 1'b1; mem_baddr <= addr; mem_wbyte <= b;
                                 addr <= addr + 12'd1;
                             end else begin                     // RMEM: addr low or next byte
+                                if (mem_req && !mem_gnt) mem_lost <= 1'b1;
                                 mem_req <= 1'b1; mem_we <= 1'b0; rd_wait <= 1'b1;
                                 if (bidx == 2'd2) begin
                                     mem_baddr <= {addr[11:8], b}; rd_byte <= b[2:0];

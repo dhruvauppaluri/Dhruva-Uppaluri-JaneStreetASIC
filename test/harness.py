@@ -185,6 +185,24 @@ class AHost:
     def __init__(self, h):
         self.h = h
 
+    async def load_image(self, image, check=True):
+        """Same contract as Setl.load_image, including the lost-write check."""
+        from setl import isa
+        from setl.host import HostError
+        if check:
+            e = await self.read_reg(isa.G_HOSTERR)
+            if e:
+                await self.write_reg(isa.G_HOSTERR, e)
+        await self._call("load_image", image, check=False)
+        if check:
+            e = await self.read_reg(isa.G_HOSTERR)   # [2] = the last byte still waiting
+            if e:
+                await self.write_reg(isa.G_HOSTERR, e & 3)
+                raise HostError(f"program memory write lost (HOSTERR={e:#x})")
+
+    async def _call(self, name, *a, **kw):
+        return await self.__getattr__(name)(*a, **kw)
+
     def __getattr__(self, name):
         fn = getattr(Setl, name)
 

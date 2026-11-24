@@ -24,7 +24,7 @@ def prog(name):
 async def feed(host, lane, data):
     """Push bytes, never overfilling the 4-deep TX FIFO."""
     for b in data:
-        while (await host.status(lane))["tx"] == 4:
+        while (await host.status(lane))["tx"] == isa.FIFO_DEPTH:
             pass
         await host.push(lane, [b])
 
@@ -184,8 +184,9 @@ async def test_uart_autobaud(dut):
     h.check()
 
 
-async def spi_controller(h, sck, mosi, cs, miso_uo, data, half):
-    """Testbench SPI controller (mode 0, MSB first) bit-banging ui pins."""
+async def spi_controller(h, sck, mosi, cs, miso_uo, data, half, miso_uio=None):
+    """Testbench SPI controller (mode 0, MSB first) bit-banging ui pins.
+    MISO is read from uo[miso_uo], or from the uio bus when miso_uio is given."""
     clk = h.dut.clk
     got = []
     h.set_ui(cs, 0)
@@ -195,7 +196,7 @@ async def spi_controller(h, sck, mosi, cs, miso_uo, data, half):
         for i in range(7, -1, -1):
             h.set_ui(mosi, (b >> i) & 1)
             await ClockCycles(clk, half)
-            r = (r << 1) | h.uo_level(miso_uo)
+            r = (r << 1) | (h.uio_level(miso_uio) if miso_uio is not None else h.uo_level(miso_uo))
             h.set_ui(sck, 1)
             await ClockCycles(clk, half)
             h.set_ui(sck, 0)
@@ -220,6 +221,52 @@ async def test_spi_target(dut):
                                data=[0x9E, 0x21, 0xF0], half=12)
     assert got == [0x5A, 0xC3, 0x0F], [hex(x) for x in got]
     assert list(await host.pop(0, 3)) == [0x9E, 0x21, 0xF0]
+    h.check()
+
+
+@cocotb.test()
+async def test_spi_target_shared_bus(dut):
+    """The SPI target on a shared MISO line: tri-state OMAP mode, MISO released
+    whenever CS is high, and another device answering on the same wire."""
+    h, host = await setup(dut)
+    img, sym, _ = prog("spi_target.setl")
+    await host.load_image(img)
+    h.set_ui(4, 1)
+    MISO = 2
+    await host.config_lane(0, start=sym["spi_target"], msb=True, outmap=[("uio2", "oe")],
+                           outinit=0b0001)
+    await host.push(0, [0x5A, 0xC3])
+    await host.run(1)
+    bad = []
+    watching = True
+
+    async def watch():                    # OE must follow CS (after sync + a few ticks)
+        hist = []
+        while watching:
+            await RisingEdge(dut.clk)
+            cs = (h.ui >> 4) & 1
+            hist = (hist + [cs])[-12:]
+            oe = (h.uio_oe >> MISO) & 1
+            if len(hist) == 12 and all(hist) and oe:
+                bad.append(("driven while CS high", h.cycle))
+            if len(hist) == 12 and not any(hist) and not oe:
+                bad.append(("released while CS low", h.cycle))
+    w = cocotb.start_soon(watch())
+    await ClockCycles(dut.clk, 40)
+    got = await spi_controller(h, sck=2, mosi=3, cs=4, miso_uo=None, miso_uio=MISO,
+                               data=[0x9E, 0x21], half=12)
+    assert got == [0x5A, 0xC3], [hex(x) for x in got]
+    # another target owns the bus now (its own CS): it pulls MISO low, no contention
+    h.agents["other"] = 0xFF & ~(1 << MISO)
+    await ClockCycles(dut.clk, 50)
+    assert h.uio_level(MISO) == 0 and not (h.uio_oe >> MISO) & 1
+    h.release("other")
+    await ClockCycles(dut.clk, 50)
+    assert h.uio_level(MISO) == 1          # released and pulled up
+    watching = False
+    await w
+    assert not bad, bad[:3]
+    assert list(await host.pop(0, 2)) == [0x9E, 0x21]
     h.check()
 
 
@@ -384,76 +431,148 @@ async def mcu_session(c):
     return out
 
 
+async def heldout_session(c):
+    """A different access pattern from `mcu_session`, used only for checking the
+    learned device: single and crossing reads, a one-byte write, and a
+    transaction to an address nobody answers."""
+    A = 0x50
+    out = []
+
+    async def rd(p, n):
+        await c.start()
+        assert await c.write(A << 1)
+        assert await c.write(p)
+        await c.restart()
+        assert await c.write((A << 1) | 1)
+        out.append([await c.read(i < n - 1) for i in range(n)])
+        await c.stop()
+
+    await rd(0x02, 1)
+    await rd(0x01, 3)
+    await c.start()
+    out.append(await c.write(0x51 << 1))    # absent device: must be NACKed
+    await c.stop()
+    await c.start()
+    assert await c.write(A << 1)
+    for b in (0x11, 0xC3):
+        assert await c.write(b)
+    await c.stop()
+    await rd(0x10, 2)
+    await rd(0x0F, 3)
+    return out
+
+
+# (I2C half period in clocks, max host service delay in clocks, controller jitter)
+#   166 clocks = 100 kHz at the 33.33 MHz sign-off clock; 42 = ~400 kHz
+LEARN_CASES = [(166, 6000, 40), (300, 0, 0), (42, 1500, 10)]
+
+
 @cocotb.test()
 async def test_learn_and_impersonate(dut):
     """Sniff an MCU talking to a sensor, learn the sensor on the host, unplug it,
-    and let SETL impersonate it: the MCU sees the same answers."""
+    and let SETL impersonate it.  Swept over bus rate (100 kHz and 400 kHz at the
+    sign-off clock), random phase between the bus and the barrel, random
+    host-service delays in the capture and serve loops, and a jittered controller.
+    The impersonation is checked on the training session *and* on a held-out
+    session against answers recorded from the real sensor."""
+    import random
     from setl import learn
+    seed = cocotb.RANDOM_SEED
+    rng = random.Random(seed)
     h, host = await setup(dut)
-    # 100 kHz I2C at a 60 MHz clock (300-clock half period), as on the real board
-    mcu = bfm.I2cController(h, scl=0, sda=1, half=300, who="mcu")
+    for half, hdelay, jit in LEARN_CASES:
+        await host.run(0)
+        for who in ("mcu", "mcu2"):
+            h.release(who)
+        dut._log.info(f"learn case: half={half} host delay<={hdelay} jitter<={jit} seed={seed}")
+        mcu = bfm.I2cController(h, scl=0, sda=1, half=half, who="mcu", jitter=jit, rng=rng)
 
-    # ---- phase A: real sensor on the bus, SETL listens ----
-    sensor = bfm.I2cTarget(h, scl=0, sda=1, addr=0x50, who="sensor")
-    sensor.mem[0:4] = bytes([0x12, 0x34, 0x56, 0x78])
-    sensor.mem[0x0F] = 0x33
-    sensor_task = cocotb.start_soon(sensor.run())
-    img, sym, _ = prog("i2c_sniff.setl")
-    await host.load_image(img)
-    await host.config_lane(0, start=sym["i2c_sniff"], msb=True)
-    await host.run(1)
-    capture = []
-    sniffing = True
+        async def service_delay():
+            if hdelay:
+                await ClockCycles(dut.clk, rng.randint(1, hdelay))
 
-    async def drain():
-        while sniffing:
-            n = (await host.status(0))["rx"]
-            if n:
-                capture.extend(await host.pop(0, n))
-    drainer = cocotb.start_soon(drain())
-    real = await mcu_session(mcu)
-    await ClockCycles(dut.clk, 2000)
-    sniffing = False
-    await drainer
-    n = (await host.status(0))["rx"]
-    capture.extend(await host.pop(0, n))
-    assert (await host.status(0))["ovf"] == 0, "capture overflowed"
-    dev, report = learn.learn(capture)
-    dut._log.info(f"learned: {report}")
-    assert report["address"] == 0x50
-    assert {k: report["registers"][k] for k in (0, 1, 2, 3, 0x0F, 0x10, 0x11)} == \
-        {0: 0x12, 1: 0x34, 2: 0x56, 3: 0x78, 0x0F: 0x33, 0x10: 0x5A, 0x11: 0x5B}
+        # ---- phase A: real sensor on the bus, SETL listens ----
+        sensor = bfm.I2cTarget(h, scl=0, sda=1, addr=0x50, who="sensor")
+        sensor.mem[0:4] = bytes([0x12, 0x34, 0x56, 0x78])
+        sensor.mem[0x0F] = 0x33
+        sensor_task = cocotb.start_soon(sensor.run())
+        img, sym, _ = prog("i2c_sniff.setl")
+        await host.load_image(img)
+        await host.config_lane(0, start=sym["i2c_sniff"], msb=True)
+        await host.run(1)
+        capture = []
+        sniffing = True
+        peak = 0
 
-    # ---- phase B: sensor unplugged, SETL reprogrammed to impersonate it ----
-    sensor_task.cancel()
-    h.release("sensor")
-    await host.run(0)
-    img, sym, _ = prog("i2c_target_host.setl")
-    await host.load_image(img)
-    await host.config_lane(0, start=sym["i2c_target_host"], msb=True,
-                           outmap=[("uio1", "od"), ("uio0", "od")], match=0x50 << 1, mask=0xFE)
-    await host.run(1)
-    imp = learn.Impersonator(dev)
-    serving = True
-    pending = []
+        async def drain():
+            nonlocal peak
+            while sniffing:
+                await service_delay()
+                n = (await host.status(0))["rx"]
+                peak = max(peak, n)
+                if n:
+                    capture.extend(await host.pop(0, n))
+        drainer = cocotb.start_soon(drain())
+        await ClockCycles(dut.clk, rng.randint(0, 31))      # bus phase vs. the barrel
+        real = await mcu_session(mcu)
+        await ClockCycles(dut.clk, 2000)
+        sniffing = False
+        await drainer
+        n = (await host.status(0))["rx"]
+        capture.extend(await host.pop(0, n))
+        assert (await host.status(0))["ovf"] == 0, f"capture overflowed (peak RX level {peak})"
+        dut._log.info(f"capture: {learn.pairs(capture)}")
+        dev, report = learn.learn(capture)
+        dut._log.info(f"learned: {report}; peak RX level {peak}/{isa.FIFO_DEPTH}")
+        assert report["address"] == 0x50
+        assert {k: report["registers"][k] for k in (0, 1, 2, 3, 0x0F, 0x10, 0x11)} == \
+            {0: 0x12, 1: 0x34, 2: 0x56, 3: 0x78, 0x0F: 0x33, 0x10: 0x5A, 0x11: 0x5B}
 
-    async def serve():
-        while serving:
-            n = (await host.status(0))["rx"]
-            if n:
-                pending.extend(await host.pop(0, n))
-                k = len(pending) & ~1
-                replies = imp.handle(pending[:k])
-                del pending[:k]
-                if replies:
-                    await host.push(0, replies)
-    server = cocotb.start_soon(serve())
-    fake = await mcu_session(mcu)
-    serving = False
-    await server
-    assert fake == real, (fake, real)
-    assert mcu.stretched > 0, "the target never needed to stretch"
-    dut._log.info(f"impersonation: {fake}; SCL stretched for {mcu.stretched} clocks")
+        # held-out answers, recorded from the real sensor (not shown to the learner)
+        await host.run(0)
+        snapshot = bytes(sensor.mem)
+        golden = await heldout_session(mcu)
+        sensor.mem[:] = snapshot                             # undo the held-out write
+
+        # ---- phase B: sensor unplugged, SETL reprogrammed to impersonate it ----
+        sensor_task.cancel()
+        h.release("sensor")
+        img, sym, _ = prog("i2c_target_host.setl")
+        await host.load_image(img)
+        await host.config_lane(0, start=sym["i2c_target_host"], msb=True,
+                               outmap=[("uio1", "od"), ("uio0", "od")], match=0x50 << 1, mask=0xFE)
+        await host.run(1)
+        serving = True
+
+        def server_for(imp):
+            pending = []
+
+            async def serve():
+                while serving:
+                    await service_delay()
+                    n = (await host.status(0))["rx"]
+                    if n:
+                        pending.extend(await host.pop(0, n))
+                        k = len(pending) & ~1
+                        replies = imp.handle(pending[:k])
+                        del pending[:k]
+                        if replies:
+                            await host.push(0, replies)
+            return serve()
+        server = cocotb.start_soon(server_for(learn.Impersonator(dev)))
+        await ClockCycles(dut.clk, rng.randint(0, 31))
+        fake = await mcu_session(mcu)
+        assert fake == real, (fake, real)
+        # an independent controller (other timing, other jitter) runs the held-out session
+        other = bfm.I2cController(h, scl=0, sda=1, half=half + rng.randint(0, half // 2),
+                                  who="mcu2", jitter=2 * jit + 3, rng=random.Random(seed ^ 0x5A5A))
+        fake2 = await heldout_session(other)
+        serving = False
+        await server
+        assert fake2 == golden, (fake2, golden)
+        assert mcu.stretched + other.stretched > 0, "the target never needed to stretch"
+        dut._log.info(f"impersonation ok: training {fake}, held-out {fake2}; "
+                      f"SCL stretched {mcu.stretched + other.stretched} clocks")
     h.check()
 
 
@@ -516,7 +635,7 @@ async def feed_batch(host, lane, data):
     """Keep a TX FIFO topped up, several bytes per SPI transaction."""
     data = list(data)
     while data:
-        room = 4 - (await host.status(lane))["tx"]
+        room = isa.FIFO_DEPTH - (await host.status(lane))["tx"]
         if room:
             await host.push(lane, data[:room])
             del data[:room]
@@ -600,6 +719,10 @@ async def test_usb_ls_loopback(dut):
         if not hs:
             crc = bfm.usb_crc16(payload)
             expect += [crc & 0xFF, crc >> 8]
+        for _ in range(20):           # let the drainer finish its last pop
+            if len(got) >= len(expect):
+                break
+            await ClockCycles(dut.clk, 500)
         if got != expect:
             dut._log.error(f"usb rx got {[hex(x) for x in got]} expected {[hex(x) for x in expect]}")
         assert got == expect
@@ -709,4 +832,63 @@ async def test_manchester(dut):
                 assert trace[i] == trace[i - 1] or j % half == 0, f"bit {k}: edge off grid"
     got = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
     assert got == data, [hex(x) for x in got]
+    h.check()
+
+
+@cocotb.test()
+async def test_host_write_while_lanes_busy(dut):
+    """Review reproduction: both lanes change state on every tick, so no clock is
+    free for the host.  A program write must not be lost silently: the chip
+    flags it and the driver raises.  With the lanes stopped the same write lands."""
+    from setl.host import HostError
+    h, host = await setup(dut)
+    busy, sym, _ = assemble("""
+        .lane busy0
+        a0: goto b0
+        b0: goto a0
+        .org 8
+        .lane busy1
+        a1: goto b1
+        b1: goto a1
+    """)
+    await host.load_image(busy)
+    abcd = {40: int.from_bytes(b"ABCDABCD", "big")}
+    wxyz = {40: int.from_bytes(b"WXYZWXYZ", "big")}
+    await host.load_image(abcd)
+    await host.config_lane(0, start=sym["busy0"])
+    await host.config_lane(1, start=sym["busy1"])
+    await host.run(0b11)
+    await ClockCycles(dut.clk, 50)
+    raised = False
+    try:
+        await host.load_image(wxyz)
+    except HostError:
+        raised = True
+    assert raised, "a lost program write was not reported"
+    await host.run(0)
+    await ClockCycles(dut.clk, 10)
+    await host.load_image(wxyz)                   # lanes stopped: must land, no error
+    assert await host.read_word(40) == wxyz[40]
+    assert await host.read_reg(isa.G_HOSTERR) == 0
+    h.check()
+
+
+@cocotb.test()
+async def test_host_single_byte_while_lanes_busy(dut):
+    """A one-byte write that never gets a free clock is reported too (live pending bit)."""
+    from setl.host import HostError
+    h, host = await setup(dut)
+    busy, sym, _ = assemble("a0: goto b0\nb0: goto a0\n.org 8\na1: goto b1\nb1: goto a1\n")
+    await host.load_image(busy)
+    await host.config_lane(0, start=sym["a0"])
+    await host.config_lane(1, start=sym["a1"])
+    await host.run(0b11)
+    await ClockCycles(dut.clk, 50)
+    await host.write_mem(40 * 8, [0x55])
+    e = await host.read_reg(isa.G_HOSTERR)
+    assert e & 4, f"pending single-byte write not visible (HOSTERR={e:#x})"
+    await host.run(0)
+    await ClockCycles(dut.clk, 10)
+    assert (await host.read_reg(isa.G_HOSTERR)) & 4 == 0, "write did not complete once lanes stopped"
+    assert (await host.read_mem(40 * 8, 1))[0] == 0x55
     h.check()

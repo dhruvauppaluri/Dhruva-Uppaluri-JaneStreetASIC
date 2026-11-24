@@ -8,6 +8,10 @@ MicroPython/CPython with an SPI bridge).
 from . import isa
 
 WREG, RREG, WMEM, RMEM = 0x00, 0x40, 0x80, 0xC0
+
+
+class HostError(RuntimeError):
+    """A program-memory access did not complete (see G_HOSTERR)."""
 NOINC = 0x20
 
 
@@ -37,8 +41,22 @@ class Setl:
         return r[3:]
 
     # ---- program loading ---------------------------------------------------
-    def load_image(self, image):
-        """Write {word_addr: 64-bit record} using one transaction per contiguous run."""
+    def host_errors(self, clear=True):
+        e = self.read_reg(isa.G_HOSTERR)
+        if e & 3 and clear:
+            self.write_reg(isa.G_HOSTERR, e & 3)
+        return e
+
+    def load_image(self, image, check=True):
+        """Write {word_addr: 64-bit record} using one transaction per contiguous run.
+
+        Lanes have priority on the record memory (that is what keeps their timing
+        exact), so a write can only land in a clock where no lane fetches.  If the
+        running lanes left no such clock, the chip flags it and this raises instead
+        of returning as if the program had been loaded.  Stop the lanes (run(0))
+        to load safely."""
+        if check:
+            self.host_errors()
         addrs = sorted(image)
         i = 0
         while i < len(addrs):
@@ -48,6 +66,11 @@ class Setl:
             data = b"".join(image[a].to_bytes(8, "big") for a in addrs[i:j + 1])
             self.write_mem(addrs[i] * 8, data)
             i = j + 1
+        if check:
+            e = self.host_errors()
+            if e:
+                raise HostError(f"program memory write lost (HOSTERR={e:#x}): the running "
+                                "lanes kept the memory busy; stop them with run(0) and reload")
 
     def load_json(self, obj, base=0):
         """Load an assembler JSON image (dict already parsed); returns the symbols.
@@ -63,7 +86,8 @@ class Setl:
     def config_lane(self, lane, start, ta=0, tb=0, div=0, msb=False, outmap=(),
                     outinit=0xF, match=0, mask=0, ctrl=0):
         """outmap: up to 4 entries, each a pin name ('uo3', 'uio1') or a tuple
-        (pin, 'od'|'pp', invert) or None."""
+        (pin, 'od'|'pp'|'oe', invert) or None.  'oe' (uio pins only) is tri-state:
+        the next slot (k+1) is the output enable."""
         om = []
         for k in range(4):
             e = outmap[k] if k < len(outmap) else None
@@ -76,11 +100,15 @@ class Setl:
             pin = e[0]
             mode = e[1] if len(e) > 1 else "pp"
             inv = bool(e[2]) if len(e) > 2 else False
-            if mode not in ("pp", "od"):
-                raise ValueError(f"output mode must be 'pp' or 'od', not {mode!r}")
+            if mode not in ("pp", "od", "oe"):
+                raise ValueError(f"output mode must be 'pp', 'od' or 'oe', not {mode!r}")
             v = isa.omap_pin(pin)
             if mode == "od":
                 v |= isa.OMAP_OD
+            if mode == "oe":
+                if not 8 <= v <= 15:
+                    raise ValueError("tri-state ('oe') needs a uio pin: uo pins are always driven")
+                v |= isa.OMAP_OE
             if inv:
                 v |= isa.OMAP_INV
             om.append(v)
@@ -113,8 +141,8 @@ class Setl:
         self.write_regs(lane * isa.LANE_STRIDE + isa.R_FIFO, list(data), noinc=True)
 
     def status(self, lane):
-        s = self.read_reg(isa.G_STATUS + lane)
-        return {"tx": s & 7, "rx": (s >> 3) & 7, "event": (s >> 6) & 1, "ovf": s >> 7}
+        a, b = self.read_regs(isa.G_LEVEL + 2 * lane, 2)
+        return {"tx": a & 31, "rx": b & 31, "event": (a >> 6) & 1, "ovf": a >> 7}
 
     def pop(self, lane, n):
         return self.read_regs(lane * isa.LANE_STRIDE + isa.R_FIFO, n, noinc=True)

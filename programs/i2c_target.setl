@@ -14,13 +14,17 @@ g_wfall:  in sda wait fall                                goto g_chk
 g_chk:    in scl                                          if pin goto g_start else g_idle
 g_start:  set 0=1 cnt=7 in scl wait !pin                  goto ab_bit
 ; ---- 7 address bits; each sample branches on its value so that an SDA
-;      change while SCL is high (START / STOP) is caught ----
+;      change while SCL is high (START / STOP) is caught.  SCL is checked once
+;      more after any SDA change: SCL and SDA are polled on alternate ticks, so
+;      data that changes just after SCL falls must not pass for a START/STOP ----
 ab_bit:   in scl wait pin                                 goto ab_samp
 ab_samp:  in sda shift dec                                if pin goto ab_h1 else ab_h0
 ab_h1:    in scl                                          if !pin goto ab_low else ab_h1s
-ab_h1s:   in sda                                          if !pin goto g_start else ab_h1
+ab_h1s:   in sda                                          if !pin goto ab_c1 else ab_h1
+ab_c1:    in scl                                          if pin goto g_start else ab_low   ; SCL still high: a real START
 ab_h0:    in scl                                          if !pin goto ab_low else ab_h0s
-ab_h0s:   in sda                                          if pin goto g_idle else ab_h0
+ab_h0s:   in sda                                          if pin goto ab_c0 else ab_h0
+ab_c0:    in scl                                          if pin goto g_idle else ab_low   ; SCL still high: a real STOP
 ab_low:                                                   if cnt0 goto rw_bit else ab_bit
 ; ---- R/W bit, then address match ----
 rw_bit:   in scl wait pin                                 goto rw_samp
@@ -35,9 +39,11 @@ wk_rel:   set 0=1 cnt=8                                   goto d_bit
 d_bit:    in scl wait pin                                 goto d_samp
 d_samp:   in sda shift dec                                if pin goto d_h1 else d_h0
 d_h1:     in scl                                          if !pin goto d_low else d_h1s
-d_h1s:    in sda                                          if !pin goto g_start else d_h1
+d_h1s:    in sda                                          if !pin goto d_c1 else d_h1
+d_c1:     in scl                                          if pin goto g_start else d_low   ; SCL still high: a real START
 d_h0:     in scl                                          if !pin goto d_low else d_h0s
-d_h0s:    in sda                                          if pin goto g_idle else d_h0
+d_h0s:    in sda                                          if pin goto d_c0 else d_h0
+d_c0:     in scl                                          if pin goto g_idle else d_low   ; SCL still high: a real STOP
 d_low:                                                    if cnt0 goto d_got else d_bit
 d_got:    push                                            goto wack
 ; ---- read: ACK the address, then send bytes until the controller NACKs ----

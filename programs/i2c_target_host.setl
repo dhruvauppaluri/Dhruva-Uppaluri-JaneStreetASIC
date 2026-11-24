@@ -15,9 +15,11 @@ g_start:  set 0=1 cnt=7 in scl wait !pin                  goto ab_bit
 ab_bit:   in scl wait pin                                 goto ab_samp
 ab_samp:  in sda shift dec                                if pin goto ab_h1 else ab_h0
 ab_h1:    in scl                                          if !pin goto ab_low else ab_h1s
-ab_h1s:   in sda                                          if !pin goto g_start else ab_h1
+ab_h1s:   in sda                                          if !pin goto ab_c1 else ab_h1
+ab_c1:    in scl                                          if pin goto g_start else ab_low   ; SCL still high: a real START
 ab_h0:    in scl                                          if !pin goto ab_low else ab_h0s
-ab_h0s:   in sda                                          if pin goto g_idle else ab_h0
+ab_h0s:   in sda                                          if pin goto ab_c0 else ab_h0
+ab_c0:    in scl                                          if pin goto g_idle else ab_low   ; SCL still high: a real STOP
 ab_low:                                                   if cnt0 goto rw_bit else ab_bit
 rw_bit:   in scl wait pin                                 goto rw_samp
 rw_samp:  in sda shift                                    if pin goto rw_r else rw_w
@@ -35,9 +37,11 @@ wk_rel:   set 0=1 cnt=8                                   goto d_bit
 d_bit:    in scl wait pin                                 goto d_samp
 d_samp:   in sda shift dec                                if pin goto d_h1 else d_h0
 d_h1:     in scl                                          if !pin goto d_low else d_h1s
-d_h1s:    in sda                                          if !pin goto g_start else d_h1
+d_h1s:    in sda                                          if !pin goto d_c1 else d_h1
+d_c1:     in scl                                          if pin goto g_start else d_low   ; SCL still high: a real START
 d_h0:     in scl                                          if !pin goto d_low else d_h0s
-d_h0s:    in sda                                          if pin goto g_idle else d_h0
+d_h0s:    in sda                                          if pin goto d_c0 else d_h0
+d_c0:     in scl                                          if pin goto g_idle else d_low   ; SCL still high: a real STOP
 d_low:                                                    if cnt0 goto d_got else d_bit
 d_got:    push                                            goto d_t1
 d_t1:     ld 0x57                                         goto d_t2
