@@ -1,0 +1,156 @@
+# SETL: a protocol emulator with no CPU
+
+*Jane Street protocol emulator ASIC competition — IHP SG13CMOS5L, Tiny Tapeout 8×4.*
+
+## The idea in one paragraph
+
+A protocol is a state machine with timers. Most entries emulate that state machine in
+software, on a small CPU or a PIO-like interpreter, so one protocol step costs several
+instructions and several clocks. SETL stores the protocol *as the state machine
+itself*. Each 64-bit word in on-chip SRAM is one **state record**. It says what to do
+on entry (drive or release pins, shift a bit, push or pop a byte, load a timer or
+counter), what to wait for (timer, pin level or edge, FIFO state, counter, shift-register
+match), and which of two successor states to go to. Four **lanes** execute these graphs
+concurrently on a deterministic barrel. Each lane can change state on every one of its
+ticks, with no stalls, no arbitration, and timing that does not depend on the other
+lanes. A UART transmitter is 4 words. An I²C controller with clock stretching is about
+40.
+
+## Why this answers "can it run a protocol it wasn't designed for?"
+
+Nothing in the silicon knows any protocol. The hardware provides a small, general
+**datapath contract**:
+
+* a 16-bit timer, an 8-bit counter, an 8-bit shift register (either bit order), and a
+  16-bit stopwatch;
+* 4-deep TX and RX FIFOs to the host;
+* 4 output slots per lane, each routed to any pin as push-pull or open-drain, optionally
+  inverted;
+* 32 selectable inputs: pins, the chip's own outputs, and the other lanes' flags.
+
+Any protocol whose controller fits that contract is a *program*. The programs written so
+far cover twelve roles and protocols:
+
+| protocol / role | words | notes |
+|---|---|---|
+| UART TX, UART RX | 4, 5 | any baud via TA/TB; framing-error event |
+| UART RX with **on-chip auto-baud** | 13 | measures the start bit with the stopwatch and writes its own TA/TB |
+| SPI controller, modes 0–3 | 6 + 6 | CPOL is a pin-inversion bit, so the same program serves both polarities |
+| SPI target | 12 | full duplex |
+| I²C controller | 41 | ACK/NACK, reads with NACK on the last byte, clock stretching, NACK abort |
+| I²C target | 39 | START, repeated START and STOP detected on any bit; address match in hardware |
+| I²C bus sniffer | 25 | passive capture as (value, tag) pairs |
+| host-served I²C target | 50 | stretches SCL while the host computes each reply |
+| JTAG adapter | 8 | (TMS, TDI) pairs in, TDO out; the host walks the TAP |
+| PS/2 receiver | 6 | device-clocked |
+| WS2812 LED driver | 8 | pulse-width encoding |
+
+None of these needed a hardware change. The one hardware feature added during
+development was the stopwatch (two spare record bits), which made on-chip auto-baud
+possible.
+
+## Things the architecture makes possible
+
+* **Learn, then impersonate.** Lane 0 sniffs an MCU talking to a sensor. The host
+  (the RP2350) learns a register-device model from the capture. Then the sensor is
+  unplugged, the chip is reprogrammed as a *host-served target*, and the MCU gets
+  identical answers. The target stretches SCL while the host works out each byte, so
+  the host can be slow and a reply is never stale. (`test_learn_and_impersonate`.)
+* **Learning timing on chip.** The auto-baud receiver learns any baud rate from one
+  calibration character, and relearns if restarted. The host can read the learned rate.
+* **Both roles at once.** One chip is an I²C controller on lane 0 and an I²C target on
+  lane 1, on the same open-drain pins, talking to itself through its pads.
+* **On-chip links.** A lane can read another lane's output pins and flags, so lanes can
+  be chained (a UART TX lane feeding a UART RX lane is tested).
+* **Glitch-free bring-up.** Pins come up at programmed idle levels before they are
+  mapped, so mapping a pin never produces a stray edge on a live bus.
+
+## Hardware
+
+```
+host SPI ──► registers / FIFOs / program memory
+               │
+   record memory 512 × 64 (two IHP 512×32 SRAM macros), one access per clock,
+   registered read data
+               │  fetch only on a state change, in the lane's own slot
+   barrel: lane i owns the clocks where slot == i (2-lane or 4-lane mode)
+               │
+   lane: record register, timer, counter, shift register, stopwatch, FIFOs
+               │  4 output slots
+   pin router (push-pull / open-drain / invert) ──► uo[6:0], uio[7:0]
+```
+
+* **Determinism.** A lane's fetch is issued in its own slot and the data arrives in the
+  next clock, which is always before the lane's next slot. Every lane can therefore
+  transition on every tick. A transition to the current state skips the fetch and just
+  re-runs the entry action.
+* **Tick rate.** `clk / (N × (DIV+1))`. At 60 MHz with 2 lanes that is 30 MHz (33 ns
+  resolution). With 4 lanes it is 15 MHz.
+* **Host interface.** SPI target on 4 pins (mode 0, SCK ≤ clk/16): register access,
+  FIFOs, byte-granular program memory. RX-FIFO pops are committed only when the host
+  actually clocks the data byte, so the read prefetch never loses a byte.
+* **Memory options.** The IHP SRAM macros for silicon (branch `setl-sram`); a 512-word
+  behavioural array for simulation; and a 64-word flip-flop array that hardens with the
+  stock Tiny Tapeout flow. All three have the same timing contract, and the directed
+  tests pass on all three, including the real IHP macro models.
+
+Full ISA and register map: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Toolchain
+
+* `tools/setl/asm.py`: a line-per-state assembler (`label: actions… wait COND if COND goto A else B`).
+  It outputs images, `$readmemh` files, and **Verilog ROMs for formal proofs**.
+* `tools/setl/model.py`: a cycle-accurate golden model. It is the executable specification.
+* `tools/setl/host.py`: a transport-agnostic host driver (cocotb today, the RP2350 tomorrow).
+* `tools/setl/learn.py`: capture decoding, model learning, and the impersonation server.
+* `tools/setl/jtag.py`: JTAG sequence packing and unpacking.
+
+## Verification
+
+Four independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
+
+1. **Lockstep golden model.** In every RTL test, a Python model of the core runs beside
+   the RTL. It is fed the same pins and the host strobes the RTL produced, and every
+   output and every internal lane register is compared on every clock.
+2. **Independent protocol models.** Test benches implement UART, SPI (all modes), an I²C
+   EEPROM with clock stretching, an I²C controller, a full JTAG TAP, a PS/2 keyboard and a
+   WS2812 decoder from their specifications. 13 directed tests.
+3. **Constrained-random co-simulation.** Random programs, configurations, pins and host
+   traffic, including program rewrites while lanes run. 16 seeds, about 850k clocks,
+   zero mismatches.
+4. **Formal proofs of the programs on the RTL.** The assembler emits a program as a ROM,
+   and SymbiYosys proves protocol properties of *that program running on the real lane
+   RTL* against an unconstrained environment. Examples: every UART frame carries exactly
+   the next pushed byte with exact bit timing; SPI MOSI and CS discipline; I²C SDA changes
+   only in START and STOP states under any clock stretching. A same-bound reachability
+   check guards every proof against vacuity, and it caught one vacuous proof during
+   development.
+
+## Results
+
+| metric | value |
+|---|---|
+| Standard cells, SRAM build (Yosys + CMOS5L liberty) | about 9k cells, about 0.15 mm², plus 2 × 0.08 mm² SRAM |
+| Standard cells, fallback build | about 22k cells, about 0.5 mm² |
+| Clock | 50 MHz target in the hardening config (`CLOCK_PERIOD` 20 ns) |
+| GDS / precheck | see [STATUS.md](STATUS.md) for the current CI state |
+
+## Limitations (honest list)
+
+* The FIFOs are 4 deep. Fast captures need a responsive host, or the deeper SRAM FIFO on
+  the roadmap.
+* The shift register, FIFOs and counter are 8 bits wide. Longer frames take extra states.
+* 10BASE-T needs 50 ns events: run the chip at 40 MHz with 2 lanes, or add the planned
+  serializer. USB low-speed needs the planned CRC and bit-stuffing assist to be
+  practical.
+* The formal proofs are bounded (several full transactions from reset). Unbounded
+  proofs need inductive invariants.
+* No silicon exists yet. Pad timing and the CMOS5L SRAM power scheme are unproven on
+  this process. That is why a fallback build exists.
+
+## Use of AI
+
+The design, model, toolchain, tests, formal harnesses and documents were developed
+with an AI assistant (Claude, by Anthropic) working in a terminal under the author's
+direction. The author chose the direction, reviewed results, and owns the submission.
+Every claim in these documents is backed by a test or proof that runs in this repository.
