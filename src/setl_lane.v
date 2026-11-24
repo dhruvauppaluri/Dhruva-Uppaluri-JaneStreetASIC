@@ -43,13 +43,18 @@ module setl_lane #(
     output wire        ovf_set,
     output wire [8:0]  pc_o,
     output wire [7:0]  sr_o,
-    output wire [7:0]  cnt_o
+    output wire [7:0]  cnt_o,
+    // timing learning: the lane writes its own TA / TB from the stopwatch
+    output wire        ta_we,
+    output wire        tb_we,
+    output wire [15:0] t_wdata
 );
     reg [63:0] rec;
     reg [8:0]  pc;
     reg        valid, pending, first, last;
     reg [15:0] timer;
     reg [7:0]  cnt, sr, dcnt;
+    reg [15:0] sw;          // stopwatch: lane ticks, saturating
 
     assign pc_o  = pc;
     assign sr_o  = sr;
@@ -72,6 +77,7 @@ module setl_lane #(
     wire [1:0] f_cnt   = rec[16:15];
     wire [1:0] f_tmr   = rec[14:13];
     wire [1:0] f_flag  = rec[12:11];
+    wire [1:0] f_xop   = rec[10:9];
     wire [8:0] f_imm   = rec[8:0];
 
     // ---- FIFOs ----
@@ -144,6 +150,13 @@ module setl_lane #(
     wire flag_n = (act && f_flag == 2'd1) ? 1'b1 :
                   (act && f_flag == 2'd2) ? 1'b0 : flag;
 
+    // ---- stopwatch / timing learning ----
+    wire [15:0] sw_n = (act && f_xop == 2'd1) ? 16'd0 :
+                       (sw == 16'hFFFF) ? sw : sw + 16'd1;
+    assign ta_we   = tick & act & (f_xop == 2'd2);
+    assign tb_we   = tick & act & (f_xop == 2'd3);
+    assign t_wdata = (f_xop == 2'd2) ? sw : sw + {1'b0, sw[15:1]};
+
     // ---- conditions (post-action values) ----
     wire c_timer0 = (timer_n == 16'd0);
     wire c_cnt0   = (cnt_n == 8'd0);
@@ -185,11 +198,11 @@ module setl_lane #(
         if (!rst_n) begin
             pc <= 9'd0; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
-            slot_val <= 4'hF; flag <= 1'b0;
+            slot_val <= 4'hF; flag <= 1'b0; sw <= 16'd0;
         end else if (start) begin
             pc <= cfg_start; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
             timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
-            slot_val <= cfg_outinit; flag <= 1'b0;
+            slot_val <= cfg_outinit; flag <= 1'b0; sw <= 16'd0;
         end else begin
             if (rd_me & pending) begin
                 valid <= 1'b1; pending <= 1'b0; first <= 1'b1;
@@ -198,7 +211,7 @@ module setl_lane #(
             if (eligible) dcnt <= (dcnt == 8'd0) ? cfg_div : dcnt - 8'd1;
             if (tick) begin
                 sr <= sr_n; cnt <= cnt_n; timer <= timer_n;
-                slot_val <= slot_n; flag <= flag_n; last <= cur;
+                slot_val <= slot_n; flag <= flag_n; last <= cur; sw <= sw_n;
                 if (w_ok) begin
                     if (refetch) begin
                         first <= 1'b0; valid <= 1'b0; pending <= 1'b1; pc <= nxt;

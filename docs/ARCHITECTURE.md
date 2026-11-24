@@ -65,7 +65,7 @@ the RTL is checked against it every cycle (see `VERIFICATION.md`).
 | 16:15 | `CNT`     | 0 –, 1 decrement, 2 load IMM[7:0], 3 increment |
 | 14:13 | `TMR`     | 0 –, 1 load TA, 2 load TB, 3 load IMM |
 | 12:11 | `FLAG`    | 0 –, 1 set lane flag, 2 clear lane flag, 3 raise host event |
-| 10:9  | –         | reserved (0) |
+| 10:9  | `XOP`     | timing learning: 0 –, 1 stopwatch ← 0, 2 TA ← SW, 3 TB ← SW + SW/2 |
 | 8:0   | `IMM`     | immediate |
 
 ### What one tick does
@@ -79,6 +79,10 @@ On every tick the lane holds one record:
      and sets the lane's overflow flag.
    * Output slots: `OMASK`/`OVAL` are applied first, then `SOUT` takes the out bit.
    * The counter, timer and flag ops are applied.
+   * **Stopwatch** `SW` (16-bit, per lane) counts ticks and saturates at 0xFFFF. `XOP=1` clears it.
+     `XOP=2/3` write the lane's own **TA** / **TB** registers from it (`TB` gets 1.5 × SW). A
+     program can therefore measure a bit time on the line and adopt it, which is how on-chip
+     auto-baud works (`programs/uart_rx_autobaud.setl`). The host can read the learned value back.
 2. **Timer:** if this tick did not load it, the timer decrements towards 0.
 3. **Conditions** see the values *after* this tick's action. If **WAIT** holds, the lane moves to
    `BR ? T1 : T0`. Otherwise it stays, and later ticks run no action.

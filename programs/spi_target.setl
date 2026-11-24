@@ -1,0 +1,21 @@
+; SPI target (peripheral), mode 0, MSB first (CTRL msb=1).  Inputs SCK/MOSI/CS_n,
+; slot 0 = MISO.  Each byte received is pushed to RX.  The reply for each byte is
+; popped from TX when the byte starts; with TX empty the target echoes the
+; previous byte.  SCK and CS are polled every tick, so the SCK half period must
+; be at least ~4 lane ticks (plus 2 clocks of input synchronisation).
+.pin sck ui2
+.pin mosi ui3
+.pin cs ui4
+.lane spi_target
+t_idle:  in cs   wait !pin                                goto t_load
+t_load:  pop out 0 cnt=8                                  goto t_rise
+t_rise:  in sck                                           if pin goto t_samp else t_rcs
+t_rcs:   in cs                                            if pin goto t_idle else t_rise
+t_samp:  in mosi shift dec                                if cnt0 goto t_byte else t_fall
+t_fall:  in sck                                           if !pin goto t_out else t_fcs
+t_fcs:   in cs                                            if pin goto t_idle else t_fall
+t_out:   out 0                                            goto t_rise
+t_byte:  push                                             goto t_bfall
+t_bfall: in sck                                           if !pin goto t_next else t_bcs
+t_bcs:   in cs                                            if pin goto t_idle else t_bfall
+t_next:  in cs                                            if pin goto t_idle else t_load

@@ -12,6 +12,8 @@ Actions (performed once, on entry to the state):
     dec | inc | cnt=N     counter ops
     timer=TA | timer=TB | timer=N
     flag set | flag clr | event
+    sw clr | ta=sw | tb=sw15   stopwatch: clear | TA <= SW | TB <= SW + SW/2
+                    (SW counts lane ticks; use it to measure bit times on chip)
     in PIN          input for pin conditions / shift-in (ui0-7, uio0-7, uo0-6, flag0-3, one, zero)
 
 Conditions: always timer cnt0 txready rxfull pin rise fall edge
@@ -134,7 +136,7 @@ def _target(tok, symbols, consts):
 def _encode(toks, addr, symbols, pins, consts, din):
     f = dict(t1=(addr + 1) % isa.NWORDS, t0=(addr + 1) % isa.NWORDS,
              w_sel=0, w_inv=0, b_sel=0, b_inv=0, isel=din, omask=0, oval=0,
-             sout_en=0, sout=0, sh=0, fifo=0, cnt=0, tmr=0, flag=0, rsv=0, imm=0)
+             sout_en=0, sout=0, sh=0, fifo=0, cnt=0, tmr=0, flag=0, xop=0, imm=0)
     imm_user = None
     toks = ["goto" if t == "->" else t for t in toks]
 
@@ -196,6 +198,13 @@ def _encode(toks, addr, symbols, pins, consts, din):
         elif tl == "flag":
             f["flag"] = {"set": isa.FLAG_SET, "clr": isa.FLAG_CLR}[toks[i + 1]]
             i += 1
+        elif tl == "sw" and i + 1 < len(toks) and toks[i + 1] == "clr":
+            f["xop"] = isa.XOP_SWCLR
+            i += 1
+        elif tl == "ta=sw":
+            f["xop"] = isa.XOP_TASW
+        elif tl == "tb=sw15":
+            f["xop"] = isa.XOP_TBSW
         elif tl == "event":
             f["flag"] = isa.FLAG_EVENT
         elif tl == "in":

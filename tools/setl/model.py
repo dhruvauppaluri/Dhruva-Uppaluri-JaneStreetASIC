@@ -50,6 +50,7 @@ class Lane:
         self.dcnt = 0
         self.slot_val = 0xF
         self.flag = 0
+        self.sw = 0          # stopwatch: counts ticks, saturates at 0xFFFF
         self.tx = Fifo()
         self.rx = Fifo()
         self.event = 0
@@ -62,6 +63,7 @@ class Lane:
         self.timer = self.cnt = self.sr = self.dcnt = 0
         self.slot_val = self.outinit
         self.flag = 0
+        self.sw = 0
 
 
 def cond_value(sel, c):
@@ -235,6 +237,10 @@ class Chip:
             push = u.pop("_push", None)
             ev = u.pop("_event", False)
             ovf = u.pop("_ovf", False)
+            if "_ta" in u:
+                L.ta = u.pop("_ta")
+            if "_tb" in u:
+                L.tb = u.pop("_tb")
             for k, v in u.items():
                 setattr(L, k, v)
             if pop:
@@ -369,7 +375,17 @@ class Chip:
         br = cond_value(f["b_sel"], c) ^ f["b_inv"]
         nxt = f["t1"] if br else f["t0"]
 
-        u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur)
+        # stopwatch and the timing-learning ops (they write the lane's TA/TB registers)
+        if act and f["xop"] == isa.XOP_SWCLR:
+            sw_n = 0
+        else:
+            sw_n = min(L.sw + 1, 0xFFFF)
+        if act and f["xop"] == isa.XOP_TASW:
+            u["_ta"] = L.sw
+        elif act and f["xop"] == isa.XOP_TBSW:
+            u["_tb"] = (L.sw + (L.sw >> 1)) & 0xFFFF
+
+        u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur, sw=sw_n)
         if pop:
             u["_pop"] = True
         if push_req and not push_ok:

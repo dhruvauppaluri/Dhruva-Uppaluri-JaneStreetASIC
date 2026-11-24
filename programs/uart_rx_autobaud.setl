@@ -1,0 +1,23 @@
+; UART receiver that LEARNS its baud rate on chip.
+; The first character is a calibration character whose bit 0 is 1 (e.g. 'U' = 0x55,
+; or any odd byte).  The lane times its start bit with the stopwatch and writes
+; TA = ticks/bit - 1 and TB = 1.5 bits into its own registers (the host can read
+; the learned rate back).  The calibration character is not delivered.
+; Restarting the lane (RUN 0->1) re-learns, so the link can change speed.
+.pin rx ui0
+.in rx
+.lane uart_autobaud
+ab_idle:  wait !pin                                       goto ab_t1     ; start bit seen
+ab_t1:                                                    goto ab_clr
+ab_clr:   sw clr wait pin                                 goto ab_ta     ; time until bit 0 rises
+ab_ta:    ta=sw                                           goto ab_tb     ; TA = W - 1
+ab_tb:    tb=sw15                                         goto ab_skip   ; TB = 1.5 W
+ab_skip:  cnt=8 timer=TA wait timer                       goto ab_s2     ; skip the rest of the
+ab_s2:    dec timer=TA wait timer                         if cnt0 goto ab_quiet else ab_s2
+ab_quiet: wait pin                                        goto rx_idle   ; calibration frame
+; ---- normal 8N1 receive (same as uart_rx.setl) ----
+rx_idle:  cnt=8 wait !pin                                 goto rx_first
+rx_first: timer=TB wait timer                             goto rx_bit
+rx_bit:   shift dec timer=TA wait timer                   if cnt0 goto rx_stop else rx_bit
+rx_stop:  push                                            if pin goto rx_idle else rx_ferr
+rx_ferr:  event wait pin                                  goto rx_idle

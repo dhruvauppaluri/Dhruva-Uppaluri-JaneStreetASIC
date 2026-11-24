@@ -75,6 +75,8 @@ module tt_um_dhruvauppaluri_setl (
     wire [9*NL-1:0] fetch_addr_v, pc_v;
     wire [8*NL-1:0] rx_head_v, sr_v, cnt_v;
     wire [3*NL-1:0] tx_level_v, rx_level_v;
+    wire [NL-1:0] ta_we, tb_we;
+    wire [16*NL-1:0] t_wdata_v;
     wire [6:0]  uo_int;
     wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_int, s2};
 
@@ -101,7 +103,8 @@ module tt_um_dhruvauppaluri_setl (
                 .rx_level(rx_level_v[3*i +: 3]),
                 .slot_val(slot_val_v[4*i +: 4]), .flag(flag[i]),
                 .event_set(ev_set[i]), .ovf_set(ovf_set[i]),
-                .pc_o(pc_v[9*i +: 9]), .sr_o(sr_v[8*i +: 8]), .cnt_o(cnt_v[8*i +: 8])
+                .pc_o(pc_v[9*i +: 9]), .sr_o(sr_v[8*i +: 8]), .cnt_o(cnt_v[8*i +: 8]),
+                .ta_we(ta_we[i]), .tb_we(tb_we[i]), .t_wdata(t_wdata_v[16*i +: 16])
             );
         end
     endgenerate
@@ -177,6 +180,10 @@ module tt_um_dhruvauppaluri_setl (
                         default: ;
                     endcase
                 end
+            end
+            for (k = 0; k < NL; k = k + 1) begin
+                if (ta_we[k]) c_ta[k] <= t_wdata_v[16*k +: 16];
+                if (tb_we[k]) c_tb[k] <= t_wdata_v[16*k +: 16];
             end
         end
     end

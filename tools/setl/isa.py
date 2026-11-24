@@ -24,7 +24,7 @@ FIELDS = [
     ("cnt",    16, 15),  # 0 none, 1 dec, 2 load IMM[7:0], 3 inc
     ("tmr",    14, 13),  # 0 none, 1 load TA, 2 load TB, 3 load IMM
     ("flag",   12, 11),  # 0 none, 1 set flag, 2 clear flag, 3 raise host event
-    ("rsv",    10,  9),  # reserved, must be 0
+    ("xop",    10,  9),  # 0 none, 1 stopwatch clear, 2 TA<=SW, 3 TB<=SW*1.5
     ("imm",     8,  0),
 ]
 FIELD = {n: (m, l) for n, m, l in FIELDS}
@@ -33,6 +33,7 @@ FIFO_NONE, FIFO_POP, FIFO_PUSH, FIFO_LDI = range(4)
 CNT_NONE, CNT_DEC, CNT_LDI, CNT_INC = range(4)
 TMR_NONE, TMR_TA, TMR_TB, TMR_IMM = range(4)
 FLAG_NONE, FLAG_SET, FLAG_CLR, FLAG_EVENT = range(4)
+XOP_NONE, XOP_SWCLR, XOP_TASW, XOP_TBSW = range(4)
 
 # Condition selectors (4 bits) -- an inversion bit sits beside each.
 COND = {

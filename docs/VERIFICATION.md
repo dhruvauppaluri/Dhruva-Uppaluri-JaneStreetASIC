@@ -29,6 +29,8 @@ protocols from their specifications:
 | `test_uart_tx` | 7 bytes including 0x00/0xFF, TX FIFO refilled while sending |
 | `test_uart_rx_and_loopback_lane` | 3 lanes at once in 4-lane mode: RX from the test bench, TX, and a second RX lane listening to the TX lane through the on-chip output readback |
 | `test_spi_modes` | SPI controller, **all four modes**, full duplex, multi-byte frame with CS held |
+| `test_uart_autobaud` | the lane learns 40 and then 26 ticks/bit from a calibration character, receives at each rate, and the learned TA is read back |
+| `test_spi_target` | SPI **target** role: a 3-byte full-duplex exchange driven by a test-bench controller |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are

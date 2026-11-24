@@ -158,3 +158,66 @@ async def test_i2c_eeprom(dut):
     assert (await host.status(0))["event"] == 1
     assert tgt.log.count("S") == tgt.log.count("P") == 4, tgt.log
     h.check()
+
+
+@cocotb.test()
+async def test_uart_autobaud(dut):
+    """The lane learns two different baud rates from a calibration character."""
+    h, host = await setup(dut)
+    img, sym, _ = prog("uart_rx_autobaud.setl")
+    await host.load_image(img)
+    h.set_ui(0, 1)
+    for bit_ticks, data in ((40, b"\x3c\xa5"), (26, b"\x81")):
+        await host.run(0)
+        await host.config_lane(0, start=sym["uart_autobaud"])   # TA = TB = 0: nothing preset
+        await host.run(1)
+        bc = 2 * bit_ticks                                       # 2-lane barrel
+        await bfm.uart_send(dut.clk, lambda v: h.set_ui(0, v), bc, b"U")
+        await ClockCycles(dut.clk, 3 * bc)                       # idle gap after calibration
+        await bfm.uart_send(dut.clk, lambda v: h.set_ui(0, v), bc, data)
+        await ClockCycles(dut.clk, 2 * bc)
+        ta = int.from_bytes(await host.read_regs(isa.R_TA_LO, 2), "little")
+        assert abs(ta - (bit_ticks - 1)) <= 1, f"learned TA={ta} for {bit_ticks} ticks/bit"
+        st = await host.status(0)
+        assert st["rx"] == len(data) and st["event"] == 0, st
+        assert bytes(await host.pop(0, len(data))) == data
+    h.check()
+
+
+async def spi_controller(h, sck, mosi, cs, miso_uo, data, half):
+    """Testbench SPI controller (mode 0, MSB first) bit-banging ui pins."""
+    clk = h.dut.clk
+    got = []
+    h.set_ui(cs, 0)
+    await ClockCycles(clk, 2 * half)
+    for b in data:
+        r = 0
+        for i in range(7, -1, -1):
+            h.set_ui(mosi, (b >> i) & 1)
+            await ClockCycles(clk, half)
+            r = (r << 1) | h.uo_level(miso_uo)
+            h.set_ui(sck, 1)
+            await ClockCycles(clk, half)
+            h.set_ui(sck, 0)
+        got.append(r)
+    await ClockCycles(clk, half)
+    h.set_ui(cs, 1)
+    await ClockCycles(clk, 4 * half)
+    return got
+
+
+@cocotb.test()
+async def test_spi_target(dut):
+    h, host = await setup(dut)
+    img, sym, _ = prog("spi_target.setl")
+    await host.load_image(img)
+    h.set_ui(4, 1)
+    await host.config_lane(0, start=sym["spi_target"], msb=True, outmap=["uo5"])
+    await host.push(0, [0x5A, 0xC3, 0x0F])
+    await host.run(1)
+    await ClockCycles(dut.clk, 20)
+    got = await spi_controller(h, sck=2, mosi=3, cs=4, miso_uo=5,
+                               data=[0x9E, 0x21, 0xF0], half=12)
+    assert got == [0x5A, 0xC3, 0x0F], [hex(x) for x in got]
+    assert list(await host.pop(0, 3)) == [0x9E, 0x21, 0xF0]
+    h.check()

@@ -35,7 +35,7 @@ def rand_record(rng, base):
         omask=rng.randrange(16), oval=rng.randrange(16),
         sout_en=rng.randrange(2), sout=rng.randrange(4), sh=rng.randrange(2),
         fifo=rng.randrange(4), cnt=rng.randrange(4), tmr=rng.randrange(4),
-        flag=rng.randrange(4), rsv=0,
+        flag=rng.randrange(4), xop=rng.choice([0, 0, 0, 1, 2, 3]),
         imm=rng.choice([0, 1, 2, 3, 5, 8, rng.randrange(512)]) if rng.random() < 0.9 else rng.randrange(16),
     )
 

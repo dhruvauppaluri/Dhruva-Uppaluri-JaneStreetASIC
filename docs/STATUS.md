@@ -10,8 +10,9 @@
 * **RTL**: `src/` (lane, FIFO, SPI host shell, memory wrapper with three build options),
   lint-clean under Verilator `-Wall`.
 * **Programs**: UART TX, UART RX (with framing-error event), SPI controller in all four
-  modes, and an I²C controller (write, read, ACK/NACK, clock stretching, NACK abort).
-* **Verification**: 5 directed tests against independent protocol models, all passing with
+  modes, an I²C controller (write, read, ACK/NACK, clock stretching, NACK abort), an
+  **SPI target**, and a **UART receiver that learns its baud rate on chip** (stopwatch → TA/TB).
+* **Verification**: 7 directed tests against independent protocol models, all passing with
   the golden model in lockstep on RTL with both memory builds. Constrained-random
   co-simulation: 16 seeds, about 840k cycles, zero mismatches.
 * **Area (Yosys + CMOS5L typ liberty)**:
