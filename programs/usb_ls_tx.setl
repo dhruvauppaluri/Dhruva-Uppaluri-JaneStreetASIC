@@ -5,14 +5,16 @@
 ; condition), CRC-16 over the data field sent complemented (`crc nlo/nhi`), and EOP.
 ;
 ; Every bit, including stuffed bits and byte boundaries, takes exactly
-; 20 ticks (666.7 ns at 60 MHz in 2-lane mode): each bit is an entry state of
-; TA+1 = 14 ticks plus six one-tick decision states, and every path through the
+; BIT ticks (20 = 666.7 ns at 60 MHz in 2-lane mode): each bit is an entry state of
+; TA+1 = BIT-6 ticks plus six one-tick decision states, and every path through the
 ; decisions has the same length.  The line state (J or K) and the packet phase
 ; are encoded in which copy of the bit states the lane is in, so the program is
 ; 5 phases x 2 line states of the same small bit machine (181 records).
 ;
 ; Lane setup: CTRL = CTRL_CRC | (6 << 4) (stuff after six 1s, counted on the sent
-; bits); CRC poly 0xA001, init 0xFFFF; TA = 13, TB = 14; slots 0 = D+, 1 = D-.
+; bits); CRC poly 0xA001, init 0xFFFF; TA = BIT - 7, TB = BIT - 6 (BIT = ticks per
+; bit: 20 at 60 MHz, 16 at 48 MHz, 2-lane mode); slots 0 = D+, 1 = D-.
+; Usage: gen_usb_ls_tx.py [BIT]  (only the EOP lengths depend on it)
 ; The host pushes PID, then the data bytes, and keeps the FIFO fed; set HFLAG for
 ; a handshake packet (PID only, no CRC).
 .lane usb_ls_tx
