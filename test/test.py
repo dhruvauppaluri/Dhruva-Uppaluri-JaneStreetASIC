@@ -557,3 +557,51 @@ async def test_usb_ls_tx(dut):
         assert pkt == expect, ([hex(x) for x in pkt], [hex(x) for x in expect])
         await ClockCycles(dut.clk, 4 * period)
     h.check()
+
+
+@cocotb.test(skip=SMALL_MEM)
+async def test_usb_ls_loopback(dut):
+    """Lane 0 transmits USB low-speed packets; lane 1 receives them through the
+    on-chip readback with clock recovery, NRZI decoding, un-stuffing and a CRC
+    check -- a USB LS PHY + framing in two programs (268 records, needs the SRAM)."""
+    h, host = await setup(dut)
+    with open(os.path.join(PROG, "usb_ls_tx.setl")) as f:
+        tx_img, tx_sym, _ = assemble(f.read())
+    with open(os.path.join(PROG, "usb_ls_rx.setl")) as f:
+        rx_img, rx_sym, _ = assemble(".org 256\n" + f.read())
+    await host.load_image({**tx_img, **rx_img})
+    usb = 6 << 4
+    await host.config_lane(0, start=tx_sym["usb_ls_tx"], ta=13, tb=14, div=1,
+                           outmap=["uo0", "uo1"], outinit=0b0010, ctrl=isa.CTRL_CRC | usb)
+    await host.config_lane(1, start=rx_sym["usb_ls_rx"], ta=15, tb=8, div=1,
+                           ctrl=isa.CTRL_CRC | isa.CTRL_CRC_IN | usb)
+    await host.config_crc(0, poly=0xA001, init=0xFFFF)
+    await host.config_crc(1, poly=0xA001, init=0xFFFF, residue=0xB001)
+    await host.run(0b11)
+    got = []
+    draining = True
+
+    async def drain():
+        while draining:
+            n = (await host.status(1))["rx"]
+            if n:
+                got.extend(await host.pop(1, n))
+    drainer = cocotb.start_soon(drain())
+    PID = lambda p: p | ((~p & 0xF) << 4)
+    data = [0x80, 0x06, 0x00, 0x01, 0xFF, 0xFF, 0x40, 0x00]
+    for pid, payload, hs in ((PID(0x3), data, False), (PID(0x2), [], True), (PID(0xB), [0x5A], False)):
+        await host.write_reg(isa.G_HFLAG, 1 if hs else 0)
+        got.clear()
+        await feed_batch(host, 0, [pid] + payload)
+        await ClockCycles(dut.clk, 80 * (8 * (len(payload) + 4) + 12))
+        expect = [0x80, pid] + payload
+        if not hs:
+            crc = bfm.usb_crc16(payload)
+            expect += [crc & 0xFF, crc >> 8]
+        if got != expect:
+            dut._log.error(f"usb rx got {[hex(x) for x in got]} expected {[hex(x) for x in expect]}")
+        assert got == expect
+        assert (await host.status(1))["event"] == 0, "receiver reported a CRC error"
+    draining = False
+    await drainer
+    h.check()
