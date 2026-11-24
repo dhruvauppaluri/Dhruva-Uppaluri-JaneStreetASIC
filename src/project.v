@@ -82,7 +82,13 @@ module tt_um_dhruvauppaluri_setl (
     wire [16*NL-1:0] crc_v;
     wire [16*NL-1:0] t_wdata_v;
     wire [6:0]  uo_int;
-    wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_int, s2};
+    // the chip's own outputs are read back one clock late: registering them
+    // takes the pin router off the lane's critical path
+    reg  [6:0]  uo_q;
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) uo_q <= 7'd0;
+        else        uo_q <= uo_int;
+    wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_q, s2};
 
     reg         rd_valid;
     reg  [1:0]  rd_lane;

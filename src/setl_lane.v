@@ -234,11 +234,11 @@ module setl_lane #(
     wire br     = conds[f_bsel] ^ f_binv;
     wire [8:0] nxt = br ? f_t1 : f_t0;
     wire leave  = tick & w_ok;
-    wire refetch = leave & (nxt != pc);
+    wire refetch = leave;   // every exit fetches (no next-state compare on this path)
 
     wire init_fetch = slot_me & run & ~valid & ~pending;
     assign fetch_req  = init_fetch | refetch;
-    assign fetch_addr = refetch ? nxt : pc;
+    assign fetch_addr = leave ? nxt : pc;
 
     // ---- state ----
     always @(posedge clk or negedge rst_n) begin

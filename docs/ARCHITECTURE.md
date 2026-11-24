@@ -41,8 +41,9 @@ the RTL is checked against it every cycle (see `VERIFICATION.md`).
   no arbitration, and no dependence on what the other lanes are doing.
 * A **tick** is one lane step. The tick rate is `clk / (N × (DIV+1))`, where N is 2 or 4.
   At 60 MHz with 2 lanes that is 30 MHz, or 33 ns per tick.
-* A transition to the current state does not fetch. It re-enters the state, so the entry
-  action runs again.
+* Every state exit fetches, including a transition back to the same state, which
+  re-runs its entry action. The record returns before the lane's next slot, so this
+  costs nothing visible and keeps a next-state compare off the fetch path.
 * The host gets the memory in any clock where the owning lane isn't fetching.
 
 ## The state record (64 bits)
@@ -114,7 +115,7 @@ So `timer=N … wait timer` makes the state last N+1 ticks. Without a wait, a st
 |-------|--------|
 | 0–7 | `ui[0..7]` (2-flop synchronised) |
 | 8–15 | `uio[0..7]` (2-flop synchronised) |
-| 16–22 | `uo[0..6]`: the chip's own outputs, for lane-to-lane links on chip |
+| 16–22 | `uo[0..6]`: the chip's own outputs, read back one clock late (registered), for lane-to-lane links on chip |
 | 24–27 | lane flags 0–3, for lane-to-lane synchronisation |
 | 30 / 31 | constant 0 / 1 |
 

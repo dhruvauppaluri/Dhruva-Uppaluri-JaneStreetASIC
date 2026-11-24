@@ -112,6 +112,7 @@ class Chip:
         self.rd_lane = 0
         self.dout = 0
         self.cycle = 0
+        self.uo_q = 0       # registered output readback
         self._writes = []
         self._mem_writes = []
         self._cfg_writes = []
@@ -214,9 +215,10 @@ class Chip:
         return uo, uio_out, uio_oe
 
     def in_vec(self):
-        uo, _, _ = self.outputs()
+        # the chip's own outputs are read back one clock late (registered), so
+        # the pin router is not on the lane's critical path
         v = self.s2 & 0xFFFF
-        v |= (uo & 0x7F) << 16
+        v |= (self.uo_q & 0x7F) << 16
         for L in self.lanes:
             v |= L.flag << (24 + L.idx)
         v |= 1 << 31
@@ -226,6 +228,7 @@ class Chip:
     def step(self, ui_in=0, uio_in=0):
         nl = 4 if self.mode4 else 2
         invec = self.in_vec()
+        uo_now = self.outputs()[0]
         mem_req = None  # (lane, addr)
         updates = []
 
@@ -316,6 +319,7 @@ class Chip:
             w = ba >> 3
             self.mem[w] = (self.mem[w] & ~(0xFF << sh)) | (v << sh)
         self._mem_writes = []
+        self.uo_q = uo_now & 0x7F
         self.s2 = self.s1
         self.s1 = (ui_in & 0xFF) | ((uio_in & 0xFF) << 8)
         self.cycle += 1
@@ -475,11 +479,11 @@ class Chip:
 
         req = None
         if wait:
-            if nxt == L.pc:
-                u["first"] = True
-            else:
-                u.update(first=False, valid=False, pending=True, pc=nxt)
-                req = nxt
+            # every exit fetches, even back into the same state: the record
+            # returns before the lane's next slot, so the pins cannot tell, and
+            # the fetch path needs no next-state comparison
+            u.update(first=False, valid=False, pending=True, pc=nxt)
+            req = nxt
         else:
             u["first"] = False
         return req
