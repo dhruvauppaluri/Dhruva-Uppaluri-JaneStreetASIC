@@ -1,0 +1,35 @@
+[tasks]
+bmc
+reach
+prove
+
+[options]
+bmc: mode bmc
+bmc: depth 300
+bmc: aigsmt none
+reach: mode bmc
+reach: depth 300
+reach: expect fail
+reach: aigsmt none
+prove: mode prove
+prove: aigsmt z3
+
+[engines]
+bmc: abc bmc3
+reach: abc bmc3
+prove: abc pdr
+
+[script]
+read -formal setl_lane.v setl_fifo.v
+bmc: read -formal -I. fv_i2c.v
+prove: read -formal -I. fv_i2c.v
+reach: read -formal -DREACH -I. fv_i2c.v
+prep -top fv_i2c
+
+[files]
+../src/setl_lane.v
+../src/setl_fifo.v
+fv_env.vh
+fv_i2c.v
+build/i2c/rom.vh
+build/i2c/sym.vh

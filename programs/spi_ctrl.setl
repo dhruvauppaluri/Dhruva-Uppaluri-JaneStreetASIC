@@ -3,6 +3,7 @@
 ; CPOL=1 (modes 2/3): set the invert bit on SCK's OMAP entry -- same program.
 ; Every byte pushed to the TX FIFO is sent; the byte received is pushed to RX.
 ; CS stays low while the TX FIFO keeps supplying bytes.
+; Configure OUTINIT = 0b1100 (SCK idle, CS_n high) so no SCK edge occurs outside a frame.
 .pin miso ui1
 .in miso
 

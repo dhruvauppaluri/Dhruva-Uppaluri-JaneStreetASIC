@@ -233,6 +233,15 @@ def _encode(toks, addr, symbols, pins, consts, din):
     return isa.pack(**f)
 
 
+def vrom(image, name="setl_rom"):
+    """The image as a combinational Verilog function (unused words read as 0)."""
+    lines = [f"function [63:0] {name};", "    input [8:0] a;", "    case (a)"]
+    for addr in sorted(image):
+        lines.append(f"        9'd{addr}: {name} = 64'h{image[addr]:016x};")
+    lines += [f"        default: {name} = 64'h0;", "    endcase", "endfunction", ""]
+    return "\n".join(lines)
+
+
 def main(argv=None):
     import argparse
     import json
@@ -240,6 +249,9 @@ def main(argv=None):
     ap.add_argument("src")
     ap.add_argument("-o", "--out", help="write image as JSON {addr: hex}")
     ap.add_argument("--hex", help="write $readmemh file (512 lines)")
+    ap.add_argument("--vrom", help="write the image as a Verilog function (for formal proofs)")
+    ap.add_argument("--vrom-name", default="setl_rom")
+    ap.add_argument("--vsyms", help="write symbols as Verilog localparams")
     ap.add_argument("-l", "--list", action="store_true")
     a = ap.parse_args(argv)
     try:
@@ -253,6 +265,13 @@ def main(argv=None):
     if a.out:
         json.dump({"image": {str(k): f"{v:016x}" for k, v in image.items()}, "symbols": syms},
                   open(a.out, "w"), indent=1)
+    if a.vrom:
+        with open(a.vrom, "w") as fh:
+            fh.write(vrom(image, a.vrom_name))
+    if a.vsyms:
+        with open(a.vsyms, "w") as fh:
+            for k, v in sorted(syms.items(), key=lambda kv: kv[1]):
+                fh.write(f"localparam [8:0] S_{k.upper()} = 9'd{v};\n")
     if a.hex:
         with open(a.hex, "w") as fh:
             for i in range(isa.NWORDS):

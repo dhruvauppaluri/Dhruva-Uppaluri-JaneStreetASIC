@@ -19,3 +19,7 @@ test/tb.fst
 runs/
 test/backdoor.hex
 test/results_small.xml
+formal/build/
+formal/*_bmc/
+formal/*_reach/
+formal/*_prove/

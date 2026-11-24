@@ -1,0 +1,16 @@
+name: formal
+on: [push, workflow_dispatch]
+jobs:
+  formal:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install yosys 0.33 and the matching SymbiYosys
+        run: |
+          sudo apt-get update && sudo apt-get install -y yosys python3-click
+          git clone --depth 1 --branch yosys-0.33 https://github.com/YosysHQ/sby /tmp/sby
+          sudo make -C /tmp/sby install PREFIX=/usr/local
+      - name: Bounded proofs of the example programs on the lane RTL
+        run: |
+          cd formal
+          make

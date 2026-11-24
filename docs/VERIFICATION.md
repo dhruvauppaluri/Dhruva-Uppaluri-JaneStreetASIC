@@ -56,6 +56,39 @@ Known gap: coverage still varies a lot between seeds, because random graphs ofte
 into states that wait for conditions that never occur. A coverage-directed generator is
 on the to-do list.
 
+## 4. Formal proofs of the programs on the RTL (`formal/`)
+
+The assembler can emit any program as a Verilog ROM (`--vrom`, `--vsyms`). Each
+harness (`formal/fv_*.v`) runs one program on the real `setl_lane` RTL, with the
+chip's record-memory timing: fetch in the lane's slot, data one clock later. The
+environment is unconstrained, apart from "the host never overfills the TX FIFO" and
+"quiet during reset". Any data can be pushed at any time, any target can ACK or NACK,
+drive any data, and stretch SCL for any length. A **shadow FIFO** tracks the host's
+pushes, so the proofs check the *data* that comes out, not just the waveform shape.
+
+| program | properties proved |
+|---------|-------------------|
+| `uart_tx` | Every frame is an exact 8N1 frame of the next byte the host pushed, in order. Every bit lasts exactly 2·(TA+1) clocks. The line never glitches and idles high. Every frame consumes exactly one FIFO byte. |
+| `spi_ctrl` (mode 0) | SCK only moves while CS is low. MOSI is stable while SCK is high and across the rising edge. Each popped byte goes out MSB-first on exactly 8 rising edges. CS only rises on a byte boundary. The received byte equals the MISO bits at the rising edges. |
+| `i2c_ctrl` | Under any target behaviour, including unbounded clock stretching, SDA changes while SCL is high only in the START state (falling) and the STOP state (rising). SCL and SDA never change in the same clock. |
+
+The proofs are **bounded**: every behaviour from reset for 90 / 110 / 300 clocks. That is
+several complete UART frames, several SPI bytes, and a full I²C write and read
+transaction. Each harness also has a **reachability check** (`-DREACH`, SBY `expect fail`).
+It asserts that a milestone never happens within the *same* bound: two complete UART
+frames; a received SPI byte and then CS released; an I²C read byte followed by STOP. The
+solver must find a trace that reaches it. This shows the proofs are not vacuous. This
+check found a real harness bug during development: a mis-sized I²C input vector made
+the read path unreachable, and the shallow proof had been passing vacuously.
+
+An unbounded proof (PDR) did not converge within 30 minutes on the full lane datapath.
+Inductive invariants are future work.
+
+```
+cd formal && make                 # about 7 minutes; needs yosys, sby, yosys-abc
+python3 cex.py <task_dir> sig...  # print a counterexample (no SMT solver needed)
+```
+
 ## Running
 
 ```
@@ -68,7 +101,7 @@ make GATES=yes                        # gate level (after the GDS action has pro
 
 ## Not yet done (see the plan)
 
-* Formal equivalence between a source FSM and its compiled record image (SBY/EQY).
+* Unbounded (inductive) versions of the program proofs.
 * Gate-level simulation with the SRAM build. The Tiny Tapeout GL action will provide it once
   the SRAM hardening is in place.
 * FPGA bring-up.

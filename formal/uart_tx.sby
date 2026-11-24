@@ -1,0 +1,36 @@
+[tasks]
+bmc
+reach
+prove
+
+[options]
+bmc: mode bmc
+bmc: depth 90
+bmc: aigsmt none
+reach: mode bmc
+reach: depth 90
+reach: expect fail
+reach: aigsmt none
+prove: mode prove
+prove: depth 40
+prove: aigsmt z3
+
+[engines]
+bmc: abc bmc3
+reach: abc bmc3
+prove: abc pdr
+
+[script]
+read -formal setl_lane.v setl_fifo.v
+bmc: read -formal -I. fv_uart_tx.v
+prove: read -formal -I. fv_uart_tx.v
+reach: read -formal -DREACH -I. fv_uart_tx.v
+prep -top fv_uart_tx
+
+[files]
+../src/setl_lane.v
+../src/setl_fifo.v
+fv_env.vh
+fv_uart_tx.v
+build/uart_tx/rom.vh
+build/uart_tx/sym.vh
