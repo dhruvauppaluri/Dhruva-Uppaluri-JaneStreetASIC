@@ -17,7 +17,7 @@
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
-  "CLOCK_PERIOD": 20,
+  "CLOCK_PERIOD": 22,
 
   "//": "Hold slack margin - Increase them in case you are getting hold violations.",
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
@@ -85,6 +85,13 @@
                            "Metal4 3.36 3.78 420.0 192.5", "Metal4 3.36 342.8 420.0 531.54"],
   "DIODE_CELL": "sg13cmos5l_antennanp/A",
   "MAGIC_EXT_ABSTRACT_CELLS": ["RM_IHPSG13_.*"],
+  "//": "Magic DRC flags the SRAM macro's internals (230k errors in CI); sign off with the",
+  "//": "CMOS5L KLayout deck instead, as in Pettit's working CMOS5L SRAM flow",
+  "RUN_MAGIC_DRC": 0,
+  "KLAYOUT_DRC_RUNSET": "pdk_dir::libs.tech/klayout/tech/drc/ihp-sg13cmos5l.drc",
+  "//": "slow-corner setup closed with post-global-route repair and a setup margin (45 MHz)",
+  "RUN_POST_GRT_RESIZER_TIMING": true,
+  "PL_RESIZER_SETUP_SLACK_MARGIN": 0.25,
 
   "//": "Configuration docs: https://librelane.readthedocs.io/en/latest/reference/configuration.html",
 
@@ -94,7 +101,7 @@
 
   "//": "Save some time",
   "RUN_KLAYOUT_XOR": 0,
-  "RUN_KLAYOUT_DRC": 0,
+  "RUN_KLAYOUT_DRC": 1,
 
   "//": "Don't put clock buffers on the outputs",
   "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS": 0,
