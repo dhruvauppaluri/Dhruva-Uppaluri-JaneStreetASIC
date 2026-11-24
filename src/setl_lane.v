@@ -63,6 +63,7 @@ module setl_lane #(
     reg [15:0] timer;
     reg [7:0]  cnt, sr, dcnt;
     reg [15:0] sw;          // stopwatch: lane ticks, saturating
+    reg        dz;          // dcnt == 0, kept as a flag so a tick needs no compare
     reg [15:0] crc;
     reg [3:0]  ones;
     reg        crc_hold;    // set by crc nlo/nhi, cleared by crc clr
@@ -111,7 +112,7 @@ module setl_lane #(
 
     // ---- tick qualification ----
     wire eligible = slot_me & run & valid & ~pending;
-    wire tick     = eligible & (dcnt == 8'd0);
+    wire tick     = eligible & dz;
     wire act      = first;
 
     wire cur = in_vec[f_isel];
@@ -230,8 +231,67 @@ module setl_lane #(
         c_timer0,                     // 1
         1'b1                          // 0
     };
-    wire w_ok   = conds[f_wsel] ^ f_winv;
-    wire br     = conds[f_bsel] ^ f_binv;
+    // ---- fast conditions for the branch / fetch path ----
+    // Same values as `conds` (proved equal under FORMAL below), but computed
+    // straight from registered state: no adder before a compare, and the input
+    // bit (`cur`) selects between precomputed results at the very end.
+    wire ld_zero   = (f_tmr == 2'd1) ? (cfg_ta == 16'd0) :
+                     (f_tmr == 2'd2) ? (cfg_tb == 16'd0) : (f_imm == 9'd0);
+    wire q_timer0  = (act && f_tmr != 2'd0) ? ld_zero : (timer[15:1] == 15'd0);
+    reg  q_cnt0;
+    always @(*) begin
+        q_cnt0 = (cnt == 8'd0);
+        if (act) case (f_cnt)
+            2'd1: q_cnt0 = (cnt == 8'd1);
+            2'd2: q_cnt0 = (f_imm[7:0] == 8'd0);
+            2'd3: q_cnt0 = (cnt == 8'hFF);
+            default: ;
+        endcase
+    end
+    wire q_txrdy   = do_pop ? (tx_level[2:1] != 2'd0) : tx_avail;
+    wire q_rxfull  = push_ok ? (rx_level == 3'd3) : (rx_level == 3'd4);
+    // shift register after the action, for either input bit
+    wire [7:0] srn0 = (act & f_sh) ? (cfg_msb ? {sr0[6:0], 1'b0} : {1'b0, sr0[7:1]}) : sr0;
+    wire [7:0] srn1 = (act & f_sh) ? (cfg_msb ? {sr0[6:0], 1'b1} : {1'b1, sr0[7:1]}) : sr0;
+    wire q_match0  = (((srn0 ^ cfg_match) & cfg_mask) == 8'd0);
+    wire q_match1  = (((srn1 ^ cfg_match) & cfg_mask) == 8'd0);
+    wire q_bit     = cfg_msb ? srn0[7] : srn0[0];          // the in-bit never lands at the out end
+    // CRC and run counter after the action, for either CRC/run bit
+    wire        upd_en = did_sh & cfg_ctrl[1] & ~hold_n;
+    wire [15:0] crcu0  = cfg_ctrl[3] ? ({crc_pre[14:0], 1'b0} ^ (crc_pre[15] ? cfg_poly : 16'd0))
+                                     : ({1'b0, crc_pre[15:1]} ^ (crc_pre[0]  ? cfg_poly : 16'd0));
+    wire [15:0] crcu1  = cfg_ctrl[3] ? ({crc_pre[14:0], 1'b0} ^ (crc_pre[15] ? 16'd0 : cfg_poly))
+                                     : ({1'b0, crc_pre[15:1]} ^ (crc_pre[0]  ? 16'd0 : cfg_poly));
+    wire q_crcok0  = ((upd_en ? crcu0 : crc_pre) == cfg_crc_res);
+    wire q_crcok1  = ((upd_en ? crcu1 : crc_pre) == cfg_crc_res);
+    wire run_sh    = did_sh && runlen != 3'd0;
+    wire [3:0] on0 = !run_sh ? ones_pre : any_pol ? (((ones_pre == 4'd0) | rb_pre) ? 4'd1 : ones_inc) : 4'd0;
+    wire [3:0] on1 = !run_sh ? ones_pre : any_pol ? (((ones_pre == 4'd0) | ~rb_pre) ? 4'd1 : ones_inc) : ones_inc;
+    wire q_ones0   = (runlen != 3'd0) && (on0 == {1'b0, runlen});
+    wire q_ones1   = (runlen != 3'd0) && (on1 == {1'b0, runlen});
+    wire q_rise    = ~first & ~last;                        // ... and cur
+    wire q_fall    = ~first & last;                         // ... and ~cur
+    // the conditions with cur = 0 and cur = 1; the CRC/run bit is cur or outbit
+    wire cb0 = cfg_ctrl[2] ? 1'b0 : outbit;
+    wire cb1 = cfg_ctrl[2] ? 1'b1 : outbit;
+    wire [15:0] qc0 = {1'b0, cb0 ? q_ones1 : q_ones0, cb0 ? q_crcok1 : q_crcok0, hflag, q_bit,
+                       q_match0, q_fall | q_timer0, q_fall, q_fall, 1'b0, 1'b0,
+                       q_rxfull, q_txrdy, q_cnt0, q_timer0, 1'b1};
+    wire [15:0] qc1 = {1'b0, cb1 ? q_ones1 : q_ones0, cb1 ? q_crcok1 : q_crcok0, hflag, q_bit,
+                       q_match1, q_rise | q_timer0, q_rise, 1'b0, q_rise, 1'b1,
+                       q_rxfull, q_txrdy, q_cnt0, q_timer0, 1'b1};
+    wire w_ok0 = qc0[f_wsel] ^ f_winv, w_ok1 = qc1[f_wsel] ^ f_winv;
+    wire br0   = qc0[f_bsel] ^ f_binv, br1   = qc1[f_bsel] ^ f_binv;
+    wire w_ok  = cur ? w_ok1 : w_ok0;
+    wire br    = cur ? br1 : br0;
+`ifdef FORMAL
+    // the fast network is exactly the specification's condition vector
+    always @(*) begin
+        assert(w_ok == (conds[f_wsel] ^ f_winv));
+        assert(br   == (conds[f_bsel] ^ f_binv));
+        assert(dz   == (dcnt == 8'd0));
+    end
+`endif
     wire [8:0] nxt = br ? f_t1 : f_t0;
     wire leave  = tick & w_ok;
     wire refetch = leave;   // every exit fetches (no next-state compare on this path)
@@ -244,12 +304,12 @@ module setl_lane #(
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pc <= 9'd0; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
-            timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
+            timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0; dz <= 1'b1;
             slot_val <= 4'hF; flag <= 1'b0; sw <= 16'd0; crc <= 16'd0; ones <= 4'd0;
             crc_hold <= 1'b0; run_bit <= 1'b0;
         end else if (start) begin
             pc <= cfg_start; valid <= 1'b0; pending <= 1'b0; first <= 1'b0; last <= 1'b0;
-            timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0;
+            timer <= 16'd0; cnt <= 8'd0; sr <= 8'd0; dcnt <= 8'd0; dz <= 1'b1;
             slot_val <= cfg_outinit; flag <= 1'b0; sw <= 16'd0; ones <= 4'd0;
             crc_hold <= 1'b0; run_bit <= 1'b0;
         end else begin
@@ -258,7 +318,10 @@ module setl_lane #(
                 valid <= 1'b1; pending <= 1'b0; first <= 1'b1;
             end
             if (init_fetch) pending <= 1'b1;
-            if (eligible) dcnt <= (dcnt == 8'd0) ? cfg_div : dcnt - 8'd1;
+            if (eligible) begin
+                dcnt <= dz ? cfg_div : dcnt - 8'd1;
+                dz   <= dz ? (cfg_div == 8'd0) : (dcnt == 8'd1);
+            end
             if (tick) begin
                 sr <= sr_n; cnt <= cnt_n; timer <= timer_n;
                 slot_val <= slot_n; flag <= flag_n; last <= cur; sw <= sw_n;
