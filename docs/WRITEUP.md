@@ -30,7 +30,7 @@ Nothing in the silicon knows any protocol. The hardware provides a small, genera
 * 32 selectable inputs: pins, the chip's own outputs, and the other lanes' flags.
 
 Any protocol whose controller fits that contract is a *program*. The programs written so
-far cover twelve roles and protocols:
+far cover these roles and protocols:
 
 | protocol / role | words | notes |
 |---|---|---|
@@ -127,8 +127,10 @@ Four independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
    the RTL. It is fed the same pins and the host strobes the RTL produced, and every
    output and every internal lane register is compared on every clock.
 2. **Independent protocol models.** Test benches implement UART, SPI (all modes), an I²C
-   EEPROM with clock stretching, an I²C controller, a full JTAG TAP, a PS/2 keyboard and a
-   WS2812 decoder from their specifications. 13 directed tests.
+   EEPROM with clock stretching, an I²C controller, a full JTAG TAP, an SWD debug port,
+   a PS/2 keyboard, a WS2812 decoder, a USB low-speed decoder, a real-time CAN receiver
+   with ACK, and a Manchester decoder, all written from the protocol specifications.
+   19 directed tests.
 3. **Constrained-random co-simulation.** Random programs, configurations, pins and host
    traffic, including program rewrites while lanes run. 16 seeds, about 850k clocks,
    zero mismatches.

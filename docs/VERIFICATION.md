@@ -60,7 +60,7 @@ While the lanes run, random host traffic arrives: FIFO pushes and pops, host fla
 **program rewrites while lanes are running**, lane stop/restart, and status clears.
 The lockstep comparator (section 1) is the oracle.
 
-The current default is 16 seeds, about 840k clock cycles, about 270k lane ticks and about
+The current default is 16 seeds, about 850k clock cycles, about 270k lane ticks and about
 22k state entries. All seeds show zero mismatches. Coverage counters (`model.cov`) are
 printed per seed.
 
