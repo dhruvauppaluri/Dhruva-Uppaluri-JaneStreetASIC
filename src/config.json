@@ -31,6 +31,10 @@
   "//": "https://tinytapeout.com/faq/#how-can-i-map-an-additional-external-clock-to-one-of-the-gpios",
   "CLOCK_PORT": "clk",
 
+  "//": "SETL: never let synthesis use I/O pad cells as buffers (it picked IOPadOut16mA,",
+  "//": "which cannot be placed in the core: GRT-0010 'instance is not placed')",
+  "EXTRA_EXCLUDED_CELLS": ["sg13cmos5l_IOPad*"],
+
   "//": "Configuration docs: https://librelane.readthedocs.io/en/latest/reference/configuration.html",
 
   "//": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
