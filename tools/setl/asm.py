@@ -12,12 +12,14 @@ Actions (performed once, on entry to the state):
     dec | inc | cnt=N     counter ops
     timer=TA | timer=TB | timer=N
     flag set | flag clr | event
+    crc lo | crc hi | crc clr  SR <= CRC[7:0] | SR <= CRC[15:8] | CRC <= INIT
+    ones clr        reset the ones-run counter (after inserting a stuff bit)
     sw clr | ta=sw | tb=sw15   stopwatch: clear | TA <= SW | TB <= SW + SW/2
                     (SW counts lane ticks; use it to measure bit times on chip)
     in PIN          input for pin conditions / shift-in (ui0-7, uio0-7, uo0-6, flag0-3, one, zero)
 
 Conditions: always timer cnt0 txready rxfull pin rise fall edge
-            edge_or_timer match bit hflag never, prefix "!" to invert.
+            edge_or_timer match bit hflag crcok ones never, prefix "!" to invert.
 
 Without `wait` the state waits for nothing (leaves after one tick).
 Without goto/if the state falls through to the next line.
@@ -178,6 +180,15 @@ def _encode(toks, addr, symbols, pins, consts, din):
         elif tl == "ld":
             f["fifo"] = isa.FIFO_LDI
             set_imm(_num(toks[i + 1], consts), "ld")
+            i += 1
+        elif tl == "crc":
+            f["fifo"] = isa.FIFO_LDI
+            sp = {"lo": isa.LD_CRC_LO, "hi": isa.LD_CRC_HI, "clr": isa.LD_CRC_CLR}[toks[i + 1]]
+            set_imm(sp, "crc " + toks[i + 1])
+            i += 1
+        elif tl == "ones" and i + 1 < len(toks) and toks[i + 1] == "clr":
+            f["fifo"] = isa.FIFO_LDI
+            set_imm(isa.LD_ONES_CLR, "ones clr")
             i += 1
         elif tl == "dec":
             f["cnt"] = isa.CNT_DEC

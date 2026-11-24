@@ -54,7 +54,7 @@ class Setl:
 
     # ---- lane configuration -------------------------------------------------
     def config_lane(self, lane, start, ta=0, tb=0, div=0, msb=False, outmap=(),
-                    outinit=0xF, match=0, mask=0):
+                    outinit=0xF, match=0, mask=0, ctrl=0):
         """outmap: up to 4 entries, each a pin name ('uo3', 'uio1') or a tuple
         (pin, 'od'|'pp', invert) or None."""
         om = []
@@ -81,10 +81,20 @@ class Setl:
         # idle levels first, so a pin never shows anything else once it is mapped
         self.write_reg(base + isa.R_OUTINIT, outinit)
         self.write_regs(base, [
-            1 if msb else 0, start & 0xFF, start >> 8, div,
+            (ctrl & 0xFE) | (1 if msb else 0), start & 0xFF, start >> 8, div,
             ta & 0xFF, ta >> 8, tb & 0xFF, tb >> 8,
             *om, outinit, match, mask,
         ])
+
+    def config_crc(self, lane, poly, init=0, residue=0, crc=None):
+        """CRC/LFSR unit of a lane; enable it with ctrl=CTRL_CRC (| CTRL_CRC_IN | CTRL_CRC_LEFT)."""
+        regs = [poly & 0xFF, poly >> 8, init & 0xFF, init >> 8, residue & 0xFF, residue >> 8]
+        if crc is not None:
+            regs += [crc & 0xFF, crc >> 8]
+        self.write_regs(isa.G_CRC + 8 * lane, regs)
+
+    def read_crc(self, lane):
+        return int.from_bytes(self.read_regs(isa.G_CRC + 8 * lane + 6, 2), "little")
 
     def set_mode4(self, on):
         self.write_reg(isa.G_CTRL, 1 if on else 0)

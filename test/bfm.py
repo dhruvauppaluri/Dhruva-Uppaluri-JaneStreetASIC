@@ -9,7 +9,7 @@ async def uart_recv(clk, get_bit, bit_cycles, n, timeout=200000):
         while get_bit() == 1:
             await RisingEdge(clk)
             waited += 1
-            assert waited < timeout, "UART receive timeout"
+            assert waited < timeout, f"UART receive timeout after {[hex(x) for x in out]}"
         await ClockCycles(clk, bit_cycles // 2)
         assert get_bit() == 0, "UART start bit glitch"
         v = 0

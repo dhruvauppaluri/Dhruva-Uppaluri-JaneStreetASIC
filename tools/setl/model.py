@@ -29,6 +29,12 @@ class Lane:
         self.idx = idx
         # config
         self.msb = 0
+        self.ctrl = 0
+        self.poly = 0
+        self.crc_init = 0
+        self.crc_res = 0
+        self.crc = 0
+        self.ones = 0
         self.start = 0
         self.div = 0
         self.ta = 0
@@ -64,6 +70,7 @@ class Lane:
         self.slot_val = self.outinit
         self.flag = 0
         self.sw = 0
+        self.ones = 0
 
 
 def cond_value(sel, c):
@@ -81,7 +88,9 @@ def cond_value(sel, c):
         c["match"],
         c["bit"],
         c["hflag"],
-        0, 0, 0,
+        c["crcok"],
+        c["ones"],
+        0,
     ][sel]
 
 
@@ -103,6 +112,7 @@ class Chip:
         self._mem_writes = []
         self._cfg_writes = []
         self._host_pop = None
+        self._host_crc = None
         self.cov = {}  # coverage counters (informational)
 
     # ---------------------------------------------------------------- host
@@ -125,6 +135,7 @@ class Chip:
             r = addr & 0xF
             if r == isa.R_CTRL:
                 L.msb = val & 1
+                L.ctrl = val
             elif r == isa.R_START_LO:
                 L.start = (L.start & 0x100) | val
             elif r == isa.R_START_HI:
@@ -160,6 +171,16 @@ class Chip:
         elif isa.G_STATUS <= addr < isa.G_STATUS + 4:
             L = self.lanes[addr - isa.G_STATUS]
             self._host_clr = (L.idx, val)
+        elif isa.G_CRC <= addr < isa.G_CRC + 32:
+            L = self.lanes[(addr - isa.G_CRC) >> 3]
+            r = addr & 7
+            name = ("poly", "crc_init", "crc_res", "crc")[r >> 1]
+            cur = getattr(L, name)
+            new = (cur & 0xFF00) | val if r & 1 == 0 else (cur & 0xFF) | (val << 8)
+            if name == "crc":
+                self._host_crc = (L.idx, r & 1, val)   # one byte, after the lane's own update
+            else:
+                setattr(L, name, new)
 
     def _apply_cfg(self, addr, val):
         if addr == isa.G_CTRL:
@@ -232,6 +253,7 @@ class Chip:
             self._apply_write(a, v)  # sets _host_push/_host_clr/_host_run only
         hp, hclr, hrun = self._host_push, self._host_clr, self._host_run
         hpop, self._host_pop = self._host_pop, None
+        hcrc, self._host_crc = self._host_crc, None
 
         # commit lane updates
         for L, u in zip(self.lanes, updates):
@@ -253,6 +275,11 @@ class Chip:
                 L.event = 1
             if ovf:
                 L.ovf = 1
+            if hcrc is not None and hcrc[0] == L.idx:
+                if hcrc[1]:
+                    L.crc = (L.crc & 0xFF) | (hcrc[2] << 8)
+                else:
+                    L.crc = (L.crc & 0xFF00) | hcrc[2]
             if hp is not None and hp[0] == L.idx and len(L.tx.q) < Fifo.DEPTH:
                 L.tx.q.append(hp[1])
             if hpop is not None and hpop == L.idx and L.rx.q:
@@ -307,10 +334,17 @@ class Chip:
         pop = act and f["fifo"] == isa.FIFO_POP and tx_avail
         push_req = act and f["fifo"] == isa.FIFO_PUSH
         push_ok = push_req and len(L.rx.q) < Fifo.DEPTH
+        ld = act and f["fifo"] == isa.FIFO_LDI
+        special = ld and (f["imm"] >> 8) & 1
+        sp = f["imm"] & 3
         if pop:
             sr0 = L.tx.q[0]
-        elif act and f["fifo"] == isa.FIFO_LDI:
+        elif ld and not special:
             sr0 = f["imm"] & 0xFF
+        elif special and sp == 0:
+            sr0 = L.crc & 0xFF
+        elif special and sp == 1:
+            sr0 = L.crc >> 8
         else:
             sr0 = L.sr
         outbit = (sr0 >> 7) & 1 if L.msb else sr0 & 1
@@ -319,6 +353,22 @@ class Chip:
         else:
             shifted = (sr0 >> 1) | (cur << 7)
         sr_n = shifted if (act and f["sh"]) else sr0
+
+        # CRC / ones-run assist (fed on every shift by the out bit or the in bit)
+        did_shift = act and f["sh"]
+        b = cur if L.ctrl & isa.CTRL_CRC_IN else outbit
+        crc_n = L.crc_init if (special and sp == 2) else L.crc
+        if did_shift and L.ctrl & isa.CTRL_CRC:
+            if L.ctrl & isa.CTRL_CRC_LEFT:
+                fb = ((crc_n >> 15) & 1) ^ b
+                crc_n = ((crc_n << 1) & 0xFFFF) ^ (L.poly if fb else 0)
+            else:
+                fb = (crc_n & 1) ^ b
+                crc_n = (crc_n >> 1) ^ (L.poly if fb else 0)
+        runlen = L.ctrl >> 4
+        ones_n = 0 if (special and sp == 3) else L.ones
+        if did_shift and runlen:
+            ones_n = min(ones_n + 1, 15) if b else 0
 
         cnt_n = L.cnt
         if act:
@@ -357,6 +407,8 @@ class Chip:
             "match": int(((sr_n ^ L.match) & L.mask) == 0),
             "bit": (sr_n >> 7) & 1 if L.msb else sr_n & 1,
             "hflag": (self.hflag >> L.idx) & 1,
+            "crcok": int(crc_n == L.crc_res),
+            "ones": int(runlen != 0 and ones_n == runlen),
         }
         cv = self.cov
         cv["tick"] = cv.get("tick", 0) + 1
@@ -387,7 +439,8 @@ class Chip:
         elif act and f["xop"] == isa.XOP_TBSW:
             u["_tb"] = (L.sw + (L.sw >> 1)) & 0xFFFF
 
-        u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur, sw=sw_n)
+        u.update(sr=sr_n, cnt=cnt_n, timer=timer_n, slot_val=slot_n, flag=flag_n, last=cur, sw=sw_n,
+                 crc=crc_n, ones=ones_n)
         if pop:
             u["_pop"] = True
         if push_req and not push_ok:

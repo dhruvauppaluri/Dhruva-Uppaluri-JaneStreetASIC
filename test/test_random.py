@@ -25,7 +25,7 @@ REGION = 24  # states per lane
 
 
 def rand_record(rng, base):
-    w_sel = rng.choices(range(16), weights=[8, 10, 3, 3, 1, 4, 3, 3, 3, 4, 1, 1, 1, 0.3, 0.2, 0.2])[0]
+    w_sel = rng.choices(range(16), weights=[8, 10, 3, 3, 1, 4, 3, 3, 3, 4, 1, 1, 1, 1, 1, 0.2])[0]
     b_sel = rng.randrange(16)
     return isa.pack(
         t1=base + rng.randrange(REGION), t0=base + rng.randrange(REGION),
@@ -36,7 +36,7 @@ def rand_record(rng, base):
         sout_en=rng.randrange(2), sout=rng.randrange(4), sh=rng.randrange(2),
         fifo=rng.randrange(4), cnt=rng.randrange(4), tmr=rng.randrange(4),
         flag=rng.randrange(4), xop=rng.choice([0, 0, 0, 1, 2, 3]),
-        imm=rng.choice([0, 1, 2, 3, 5, 8, rng.randrange(512)]) if rng.random() < 0.9 else rng.randrange(16),
+        imm=rng.choice([0, 1, 2, 3, 5, 8, 0x100, 0x101, 0x102, 0x103, rng.randrange(512)]) if rng.random() < 0.9 else rng.randrange(16),
     )
 
 
@@ -68,12 +68,13 @@ async def run_seed(dut, seed):
     dut.user_project.mem.bd_load.value = 0
     await host.set_mode4(rng.random() < 0.5)
     for lane in range(4):
-        cfg = [rng.randrange(2), (lane * 32 + rng.randrange(REGION)) & 0xFF, 0,
+        cfg = [rng.randrange(256), (lane * 32 + rng.randrange(REGION)) & 0xFF, 0,
                rng.choice([0, 0, 0, 1, 2]),
                rng.randrange(12), 0, rng.randrange(12), 0,
                *[rand_omap(rng) for _ in range(4)],
                rng.randrange(16), rng.randrange(256), rng.randrange(256)]
         await host.write_regs(lane * 16, cfg)
+        await host.write_regs(isa.G_CRC + 8 * lane, [rng.randrange(256) for _ in range(8)])
         await host.push(lane, [rng.randrange(256) for _ in range(rng.randrange(5))])
     await host.write_reg(isa.G_HFLAG, rng.randrange(16))
 
@@ -104,6 +105,8 @@ async def run_seed(dut, seed):
             await host.write_reg(isa.G_STATUS + lane, 0xC0)
         elif op == 6:
             await host.read_regs(isa.G_STATUS, 4)
+            if rng.random() < 0.3:     # host rewrites a CRC register while lanes run
+                await host.write_reg(isa.G_CRC + 8 * lane + rng.randrange(8), rng.randrange(256))
         else:
             await ClockCycles(dut.clk, rng.randrange(100, 1500))
     task.cancel()

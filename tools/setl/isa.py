@@ -50,7 +50,9 @@ COND = {
     "match": 10,    # ((SR ^ MATCH) & MASK) == 0
     "bit": 11,      # shift register out-end bit
     "hflag": 12,    # host flag for this lane
-    "never": 13,    # 13..15 read as 0 (reserved)
+    "crcok": 13,    # CRC register == residue (after this tick's update)
+    "ones": 14,     # ones-run counter reached the run length (bit stuffing)
+    "never": 15,    # reserved, reads as 0
 }
 
 # Input vector (32 entries) used by ISEL
@@ -87,6 +89,9 @@ def unpack(w: int) -> dict:
 # Host register map ---------------------------------------------------------
 LANE_STRIDE = 0x10
 R_CTRL, R_START_LO, R_START_HI, R_DIV = 0, 1, 2, 3
+# CTRL: [0] MSB-first shift, [1] CRC enable, [2] CRC/ones bit = input bit (else out bit),
+#       [3] CRC shifts left (MSB-first polynomial), [7:4] ones run length (0 = off)
+CTRL_MSB, CTRL_CRC, CTRL_CRC_IN, CTRL_CRC_LEFT = 0x01, 0x02, 0x04, 0x08
 R_TA_LO, R_TA_HI, R_TB_LO, R_TB_HI = 4, 5, 6, 7
 R_OMAP0 = 8          # 8..11
 R_OUTINIT = 0xC   # writing it to a stopped lane also sets the slots immediately
@@ -103,6 +108,10 @@ G_PC = 0x8C          # +lane: pc[7:0]
 G_SR = 0x90          # +lane
 G_CNT = 0x94         # +lane
 G_PCHI = 0x98        # [3:0] pc[8] per lane
+G_CRC = 0xA0         # +8*lane: POLY lo/hi, INIT lo/hi, RES lo/hi, CRC lo/hi (CRC is read/write)
+
+# `ld` with IMM[8] set is a special form (the SR load from IMM[7:0] is replaced):
+LD_CRC_LO, LD_CRC_HI, LD_CRC_CLR, LD_ONES_CLR = 0x100, 0x101, 0x102, 0x103
 
 CHIP_ID = 0x5E
 CHIP_VERSION = 0x01

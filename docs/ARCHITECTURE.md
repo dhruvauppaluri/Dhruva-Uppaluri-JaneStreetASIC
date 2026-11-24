@@ -104,7 +104,9 @@ So `timer=N … wait timer` makes the state last N+1 ticks. Without a wait, a st
 | 10 | `match` | `((SR ^ MATCH) & MASK) == 0` |
 | 11 | `bit` | SR out-end bit |
 | 12 | `hflag` | host flag for this lane |
-| 13–15 | – | reserved (false) |
+| 13 | `crcok` | CRC register == residue (after this tick) |
+| 14 | `ones` | ones-run counter == run length (bit stuffing) |
+| 15 | – | reserved (false) |
 
 ### Input vector (`ISEL`)
 
@@ -123,6 +125,27 @@ Each lane drives 4 **output slots**. The per-lane `OMAP` registers route each sl
 **inverted**. SPI CPOL is just an inverted SCK mapping. If several slots map to the same pin,
 their values are OR-ed.
 
+### CRC / LFSR and bit-stuffing assist
+
+Each lane has a programmable 16-bit CRC/LFSR and a ones-run counter. They are
+configured by `CTRL` and the per-lane registers at `0xA0 + 8·lane` (POLY, INIT,
+RESIDUE, CRC; little-endian 16-bit; CRC can be read and written).
+
+* `CTRL[1]` enables the CRC. On every `shift` it takes one bit: the shifted-out bit, or
+  the input bit when `CTRL[2]` is set. `CTRL[3]` selects shift-left (MSB-first
+  polynomials); otherwise it shifts right (reflected polynomials, e.g. 0xA001 for
+  CRC-16/MODBUS and USB).
+* `CTRL[7:4]` sets the ones-run length (0 = off). The counter counts consecutive 1 bits
+  on the same bit source. `ones` becomes true when the counter reaches the length (6 for
+  USB, 5 for HDLC/CAN).
+* `ld` with IMM[8] set is a special form: `crc lo` (SR ← CRC[7:0]), `crc hi`,
+  `crc clr` (CRC ← INIT) and `ones clr` (after inserting a stuff bit).
+
+A reflected CRC shifts its own low byte out to the old high byte, so a transmitter
+appends the CRC with `crc lo` twice. A receiver that passes the CRC bytes through the
+unit ends with the CRC at the residue: `crcok` (`programs/modbus_tx.setl` /
+`modbus_rx.setl`).
+
 ## Host interface
 
 The host interface is an SPI target (mode 0, MSB first, SCK ≤ clk/16) on `ui7`/`ui6`/`ui5`/`uo7`.
@@ -140,7 +163,7 @@ The lane *L* registers are at `L*0x10 + r`:
 
 | r | name | |
 |---|------|-|
-| 0 | CTRL | [0] MSB-first shift |
+| 0 | CTRL | [0] MSB-first shift, [1] CRC on, [2] CRC/ones bit = input, [3] CRC shifts left, [7:4] ones run length |
 | 1,2 | START | first state (9 bits) |
 | 3 | DIV | tick divider (DIV+1) |
 | 4,5 / 6,7 | TA / TB | 16-bit timer reload values |
@@ -160,6 +183,7 @@ Global registers:
 | 0x85 | HFLAG | host flags (`hflag` condition) |
 | 0x88+L | STATUS | [2:0] TX level, [5:3] RX level, [6] event, [7] overflow; writing 1s clears [7:6] |
 | 0x8C+L / 0x90+L / 0x94+L / 0x98 | PC / SR / CNT / PC[8] | debug |
+| 0xA0+8L … +7 | POLY, INIT, RESIDUE, CRC | CRC unit (16-bit little-endian; CRC is read/write) |
 
 ## Memory build options (`src/setl_mem.v`)
 

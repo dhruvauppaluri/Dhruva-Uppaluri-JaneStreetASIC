@@ -33,7 +33,9 @@
     setl_lane lane (
         .clk(clk), .rst_n(rst_n), .start(start), .run(started), .slot_me(slot == 1'b0),
         .in_vec(in_vec), .hflag(1'b0),
-        .cfg_msb(cfg_msb), .cfg_start(cfg_start), .cfg_div(8'd0),
+        .cfg_msb(cfg_msb), .cfg_ctrl(7'd0), .cfg_poly(16'd0), .cfg_crc_init(16'd0), .cfg_crc_res(16'd0),
+        .host_crc_we_lo(1'b0), .host_crc_we_hi(1'b0), .crc_o(),
+        .cfg_start(cfg_start), .cfg_div(8'd0),
         .cfg_ta(cfg_ta), .cfg_tb(cfg_tb), .cfg_match(cfg_match), .cfg_mask(cfg_mask),
         .cfg_outinit(cfg_outinit),
         .fetch_req(fetch_req), .fetch_addr(fetch_addr), .rd_me(rd_me), .rd_data(q),
