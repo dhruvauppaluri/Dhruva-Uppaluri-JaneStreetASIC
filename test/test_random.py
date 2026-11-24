@@ -36,7 +36,7 @@ def rand_record(rng, base):
         sout_en=rng.randrange(2), sout=rng.randrange(4), sh=rng.randrange(2),
         fifo=rng.randrange(4), cnt=rng.randrange(4), tmr=rng.randrange(4),
         flag=rng.randrange(4), xop=rng.choice([0, 0, 0, 1, 2, 3]),
-        imm=rng.choice([0, 1, 2, 3, 5, 8, 0x100, 0x101, 0x102, 0x103, rng.randrange(512)]) if rng.random() < 0.9 else rng.randrange(16),
+        imm=rng.choice([0, 1, 2, 3, 5, 8, 0x100, 0x101, 0x102, 0x103, 0x104, 0x105, rng.randrange(512)]) if rng.random() < 0.9 else rng.randrange(16),
     )
 
 

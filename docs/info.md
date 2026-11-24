@@ -4,9 +4,11 @@ SETL is a reprogrammable protocol emulator. Instead of a CPU, four **lanes** eac
 through a *state graph* held in on-chip memory. One 64-bit word is one state. It says
 what to do on entry (drive or release pins, shift a bit in or out, push or pop a byte,
 load a timer or counter) and what to wait for (timer, pin level or edge, FIFO state,
-counter zero, a shift-register match). It also gives the two possible next states. A
-UART transmitter is 4 words, an SPI controller 6 words, and an I²C controller with
-clock stretching about 40 words.
+counter zero, a shift-register match, CRC check). It also gives the two possible next
+states. A UART transmitter is 4 words, an SPI controller 6 words, and an I²C controller
+with clock stretching about 40 words. Example programs: UART (including auto-baud), SPI
+controller and target, I²C controller, target and sniffer, JTAG, PS/2, WS2812, and
+MODBUS RTU with on-chip CRC.
 
 The lanes share the memory as a 2-way or 4-way barrel. Each lane gets its own clock slot,
 so every lane can change state on every one of its ticks, with no stalls. Timing is

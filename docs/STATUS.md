@@ -1,59 +1,50 @@
 # Status and plan (deadline 2027-01-18)
 
-## Done (week 0–1)
+## Done
 
-* **Architecture frozen v1**: 64-bit state records, 4 lanes on a 2/4-way deterministic barrel,
-  a registered-read memory contract that matches the IHP macro, and pin routing with
-  open-drain and invert.
-* **Executable spec**: `tools/setl/model.py`, a cycle-accurate golden model.
-* **Toolchain**: assembler (`tools/setl/asm.py`) and host driver (`tools/setl/host.py`, transport-agnostic).
-* **RTL**: `src/` (lane, FIFO, SPI host shell, memory wrapper with three build options),
-  lint-clean under Verilator `-Wall`.
-* **Programs**: UART TX, UART RX (with framing-error event), SPI controller in all four
-  modes, an I²C controller (write, read, ACK/NACK, clock stretching, NACK abort), an
-  **SPI target**, **I²C target**, **JTAG adapter**, **PS/2 receiver**, **WS2812 driver**,
-  and a **UART receiver that learns its baud rate on chip** (stopwatch → TA/TB).
-  I²C controller and target run on one chip at the same time.
-* **Learn, then impersonate**: an I²C bus sniffer program, host-side model learning
-  (`tools/setl/learn.py`), and a host-served I²C target that stretches SCL while the host
-  answers. Demonstrated end to end in `test_learn_and_impersonate`.
-* **Verification**: 12 directed tests, bounded formal proofs of the UART/SPI/I²C programs on the RTL, against independent protocol models, all passing with
-  the golden model in lockstep on RTL with both memory builds. Constrained-random
-  co-simulation: 16 seeds, about 840k cycles, zero mismatches.
-* **Area (Yosys + CMOS5L typ liberty)**:
-  * SRAM build: 8.7k cells, 0.145 mm² of cells, plus 2 × 0.080 mm² SRAM. About 25% of the die.
-  * Fallback build (64-word flop memory): 21.7k cells, 0.47 mm². About 38% of the die.
+| area | state |
+|---|---|
+| Architecture | 64-bit state records; 4 lanes on a deterministic 2/4-way barrel; registered-read memory contract matching the IHP macro; pin router with open-drain and invert; stopwatch; CRC/LFSR and ones-run assist |
+| Executable spec | `tools/setl/model.py`, cycle-accurate |
+| Toolchain | assembler (images, `$readmemh`, Verilog ROMs), host driver, learning and impersonation (`learn.py`), JTAG helper |
+| Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX (generated) |
+| Directed tests | 16 (RTL, 512-word memory) / 13 + 2 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
+| Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
+| Formal | bounded proofs of the UART / SPI / I²C programs on the lane RTL plus reachability checks; also in CI |
+| Lint | Verilator `-Wall` clean |
 
-## Next: the physical gate (top priority, needs GitHub Actions)
+## Physical design
 
-This container cannot run LibreLane, so hardening happens in the Tiny Tapeout GitHub
-action.
+Two builds are hardened by the Tiny Tapeout GitHub action:
 
-1. Push to a GitHub repo. The `gds` workflow hardens the **fallback build** (stock flow,
-   `src/config.json`, 50 MHz). Goal: green GDS, precheck and GL test. Record the slack.
-2. SRAM build: define `SETL_IHP_SRAM`, add the two macros to `MACROS` /
-   `PDN_MACRO_CONNECTIONS`, and bring in the CMOS5L Metal4 power fix. Ken Pettit's
-   Apache-2.0 `ExtendPowerStripes` LibreLane plugin (`kdp1965/ihp-um-janestreet-prism`)
-   is the known-working recipe: placement on the 11.24 µm SRAM power-column grid, and
-   `FP_PDN_VPITCH` 44.96. Use the LEF/LIB/CDL from `libs.ref/sg13cmos5l_sram/`, not trimmed
-   copies.
-3. Cut line from the plan: if step 2 isn't green by about 2026-12-08, ship the fallback
-   build and spend the spare area on a larger flop/latch memory (128 words).
+| branch | memory | config |
+|---|---|---|
+| `setl-rewrite` | 64-word flip-flop fallback (stock flow) | `src/config.json`, 50 MHz |
+| `setl-sram` | two IHP 512×32 SRAM macros | adds `SETL_IHP_SRAM`, macro placement and PDN on the SRAM column grid, and Ken Pettit's Apache-2.0 `ExtendPowerStripes` step (`librelane_plugin_setl_pdn.py`) |
 
-## Then (in plan order)
+Issues found and fixed in CI so far:
+* ABC used an I/O pad cell (`sg13cmos5l_IOPadOut16mA`) as a buffer, and global placement
+  could not place it (GRT-0010). Fixed with `EXTRA_EXCLUDED_CELLS`.
+* The SRAM build's lint step could not see the macro (MODMISSING). Fixed with a `vh`
+  blackbox view.
 
-| weeks | item |
-|-------|------|
-| 2–3 | **FSM compiler**: Verilog FSM → `yosys fsm_extract` → records; SBY/EQY equivalence proof between the image and the source FSM |
-| 3–4 | more programs: SPI target, I²C target (address match via `match`), JTAG, SWD, PS/2, WS2812 |
-| 4–6 | **learning-as-a-feature**: auto-baud (measure 0x55 into TA; mostly a program, plus a small "timer capture" action), a capture/logic-analyser program, host-side Mealy inference (RPNI), and an I²C impersonation demo |
-| 6–7 | stretch assists using the spare area: programmable CRC/LFSR, NRZI and bit-stuffing, Manchester encoding, a full-rate serializer for 10BASE-T; USB-LS. 8 lanes if timing allows |
-| 8 | write-up, AI-use disclosure, demo video. Submit with a 3-day buffer |
+Check the GitHub Actions page for the current GDS / precheck / gate-level results of
+each branch.
 
-## Known limitations of v1
+Decision rule from the plan: submit `setl-sram` if it is green. Otherwise submit the
+fallback, and spend its spare area on more memory words.
 
-* Host memory writes while lanes run use spare slots. A lane that changes state on every tick
-  can delay host access (the SPI shell expects access within half an SCK period).
-* SR, FIFOs and the counter are 8 bits wide. 9-bit or longer frames need extra states.
-* 10BASE-T needs 50 ns events. Run the chip at 40 MHz with 2 lanes, or wait for the planned
-  serializer assist.
+## Next
+
+1. Get both GDS builds green; record area, timing (slack at 50 MHz) and precheck.
+2. Run gate-level simulation of the directed tests (the GL job in the GDS workflow).
+3. USB low-speed receive: clock recovery (DPLL) from transitions.
+4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
+5. Bring-up kit for the RP2350: a MicroPython transport for `setl.host`.
+
+## Known limitations
+
+* The FIFOs are 4 deep. Fast protocols need a responsive host, as the MODBUS test shows.
+* The shift register, FIFOs and counter are 8 bits wide.
+* Host memory writes while lanes run use spare slots only.
+* 10BASE-T needs 50 ns events: 40 MHz with 2 lanes, or a serializer.

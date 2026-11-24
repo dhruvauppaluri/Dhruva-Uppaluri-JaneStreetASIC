@@ -13,6 +13,7 @@ Actions (performed once, on entry to the state):
     timer=TA | timer=TB | timer=N
     flag set | flag clr | event
     crc lo | crc hi | crc clr  SR <= CRC[7:0] | SR <= CRC[15:8] | CRC <= INIT
+    crc nlo | crc nhi          SR <= ~CRC byte, and freeze the CRC until `crc clr`
     ones clr        reset the ones-run counter (after inserting a stuff bit)
     sw clr | ta=sw | tb=sw15   stopwatch: clear | TA <= SW | TB <= SW + SW/2
                     (SW counts lane ticks; use it to measure bit times on chip)
@@ -183,7 +184,8 @@ def _encode(toks, addr, symbols, pins, consts, din):
             i += 1
         elif tl == "crc":
             f["fifo"] = isa.FIFO_LDI
-            sp = {"lo": isa.LD_CRC_LO, "hi": isa.LD_CRC_HI, "clr": isa.LD_CRC_CLR}[toks[i + 1]]
+            sp = {"lo": isa.LD_CRC_LO, "hi": isa.LD_CRC_HI, "clr": isa.LD_CRC_CLR,
+                  "nlo": isa.LD_CRC_NLO, "nhi": isa.LD_CRC_NHI}[toks[i + 1]]
             set_imm(sp, "crc " + toks[i + 1])
             i += 1
         elif tl == "ones" and i + 1 < len(toks) and toks[i + 1] == "clr":
