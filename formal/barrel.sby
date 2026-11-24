@@ -1,0 +1,29 @@
+[tasks]
+prove
+reach
+
+[options]
+prove: mode prove
+prove: aigsmt none
+reach: mode bmc
+reach: depth 160
+reach: expect fail
+reach: aigsmt none
+
+[engines]
+prove: abc pdr
+reach: abc bmc3
+
+[script]
+prove: read -formal -DSETL_FORMAL_ANY_MEM project.v setl_lane.v setl_fifo.v setl_host.v setl_mem.v
+reach: read -formal -DSETL_FORMAL_ANY_MEM -DFORMAL_REACH project.v setl_lane.v setl_fifo.v setl_host.v setl_mem.v
+read -formal fv_barrel.v
+prep -top fv_barrel
+
+[files]
+../src/project.v
+../src/setl_lane.v
+../src/setl_fifo.v
+../src/setl_host.v
+../src/setl_mem.v
+fv_barrel.v

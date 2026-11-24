@@ -41,6 +41,8 @@ protocols from their specifications:
 | `test_usb_ls_tx` | USB low-speed DATA0 (with forced bit stuffing), ACK handshake, and empty DATA1. An independent decoder does NRZI, un-stuffing, SYNC, PID, CRC-16 and EOP, and asserts that **every transition lies exactly on the bit grid** (512-word memory only) |
 | `test_usb_ls_loopback` | USB LS TX lane → RX lane through the on-chip readback: clock recovery, NRZI, un-stuffing, CRC check; data packets and a handshake (512-word memory only) |
 | `test_can_tx` | CAN 2.0A frames at 500 kbit/s against a real-time receiver that de-stuffs, checks the bit grid and the CRC-15, and drives the ACK slot; stuffing in the ID and data fields; a frame with no ACK raises the host event (512-word memory only) |
+| `test_swd_read_dpidr` | SWD against a debug-port model: line reset, JTAG-to-SWD switch, DPIDR read with ACK=OK, data and parity |
+| `test_manchester` | the tutorial's protocol: Manchester line coding decoded independently, with every edge on the half-bit grid |
 | `test_i2c_eeprom` | I²C controller write, pointer set, 3-byte read with ACK/NACK, **clock stretching**, NACK on a wrong address raising a host event, and the rest of the transaction discarded |
 
 These tests run on RTL with both memory builds (`make`, `make SETL_MEM=small`), and are
@@ -58,13 +60,14 @@ While the lanes run, random host traffic arrives: FIFO pushes and pops, host fla
 **program rewrites while lanes are running**, lane stop/restart, and status clears.
 The lockstep comparator (section 1) is the oracle.
 
-The current default is 16 seeds, about 840k clock cycles, about 270k lane ticks and about
+The current default is 16 seeds, about 850k clock cycles, about 270k lane ticks and about
 22k state entries. All seeds show zero mismatches. Coverage counters (`model.cov`) are
 printed per seed.
 
-Known gap: coverage still varies a lot between seeds, because random graphs often settle
-into states that wait for conditions that never occur. A coverage-directed generator is
-on the to-do list.
+The stimulus is coverage-directed. The test watches the golden model, and a lane that
+has not changed state since the last look (parked on a condition that may never come) is
+restarted, sometimes from a different start state. This steadied the per-seed coverage:
+the minimum state entries per seed went from tens to hundreds or thousands.
 
 ## 4. Formal proofs of the programs on the RTL (`formal/`)
 
@@ -91,8 +94,25 @@ solver must find a trace that reaches it. This shows the proofs are not vacuous.
 check found a real harness bug during development: a mis-sized I²C input vector made
 the read path unreachable, and the shallow proof had been passing vacuously.
 
-An unbounded proof (PDR) did not converge within 30 minutes on the full lane datapath.
-Inductive invariants are future work.
+### Unbounded proof: the barrel never stalls a lane (`formal/barrel.sby`)
+
+This proof runs on the **complete chip** with the host SPI pins and protocol pins left
+completely free. That means any register, memory or FIFO traffic, lanes started and
+stopped at any time, and the barrel width changed at any time. The record memory is
+replaced by arbitrary data (`SETL_FORMAL_ANY_MEM`), so it covers every program at once.
+ABC's PDR proves, for all time:
+
+* at most one lane fetches a record in any clock;
+* every fetch is answered on the very next clock, to the lane that asked;
+* a lane never reaches its slot while it is still waiting for record data.
+
+Together these are the architecture's determinism claim: a lane can change state on
+every one of its ticks, whatever the other lanes and the host do. The proof takes about
+15 s. A reachability check (lane 3 receiving a record in 4-lane mode, which needs real
+SPI configuration traffic) shows it is not vacuous.
+
+The protocol-level proofs above stay bounded. PDR on the full lane datapath with a
+protocol monitor did not converge within 30 minutes.
 
 ```
 cd formal && make                 # about 7 minutes; needs yosys, sby, yosys-abc
@@ -111,7 +131,7 @@ make GATES=yes                        # gate level (after the GDS action has pro
 
 ## Not yet done (see the plan)
 
-* Unbounded (inductive) versions of the program proofs.
+* Unbounded versions of the program-level proofs.
 * Gate-level simulation with the SRAM build. The Tiny Tapeout GL action will provide it once
   the SRAM hardening is in place.
 * FPGA bring-up.

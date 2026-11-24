@@ -1,0 +1,19 @@
+; Manchester encoder (IEEE 802.3 convention: 0 = high->low, 1 = low->high), MSB first.
+; slot 0 = line.  Bytes from TX; the line idles low.  Half bit = TA + 1 ticks.
+; Every path from the second half-bit edge to the next first-half edge has exactly
+; 3 decision ticks (mc_next, then mc_pad + mc_pick, mc_more + mc_load, or
+; mc_more + mc_end at the end of a frame), so the
+; second half waits TB = TA - 3.  Needs TA >= 3: at 60 MHz in 2-lane mode the
+; fastest rate is 3.75 Mbit/s (10BASE-T would need a serializer).
+.lane manchester_tx
+mc_idle:  set 0=0 wait txready                            goto mc_load
+mc_load:  pop cnt=8                                       if bit goto mc_1a else mc_0a
+mc_1a:    set 0=0 timer=TA wait timer                     goto mc_1b       ; first half of a 1
+mc_1b:    set 0=1 shift dec timer=TB wait timer           goto mc_next
+mc_0a:    set 0=1 timer=TA wait timer                     goto mc_0b       ; first half of a 0
+mc_0b:    set 0=0 shift dec timer=TB wait timer           goto mc_next
+mc_next:                                                  if cnt0 goto mc_more else mc_pad
+mc_pad:                                                   goto mc_pick
+mc_pick:                                                  if bit goto mc_1a else mc_0a
+mc_more:                                                  if txready goto mc_load else mc_end
+mc_end:                                                   goto mc_idle     ; last bit keeps its full half

@@ -7,8 +7,13 @@ load a timer or counter) and what to wait for (timer, pin level or edge, FIFO st
 counter zero, a shift-register match, CRC check). It also gives the two possible next
 states. A UART transmitter is 4 words, an SPI controller 6 words, and an I²C controller
 with clock stretching about 40 words. Example programs: UART (including auto-baud), SPI
-controller and target, I²C controller, target and sniffer, JTAG, PS/2, WS2812, and
-MODBUS RTU with on-chip CRC.
+controller and target, I²C controller, target and sniffer, JTAG, SWD, PS/2, WS2812,
+Manchester, MODBUS RTU with on-chip CRC, CAN 2.0A TX, and USB low-speed TX/RX with
+clock recovery (the larger ones need the SRAM build).
+
+Each lane also has a programmable CRC/LFSR (any polynomial up to 16 bits), a
+bit-stuffing run counter and a stopwatch, so line coding, CRCs and baud-rate learning
+happen on chip.
 
 The lanes share the memory as a 2-way or 4-way barrel. Each lane gets its own clock slot,
 so every lane can change state on every one of its ticks, with no stalls. Timing is

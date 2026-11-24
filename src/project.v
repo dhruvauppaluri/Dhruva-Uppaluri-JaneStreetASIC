@@ -283,4 +283,25 @@ module tt_um_dhruvauppaluri_setl (
     assign uio_oe  = uio_e;
 
     wire _unused = &{ena, 1'b0};
+
+`ifdef FORMAL
+    // Barrel properties (formal/barrel.sby proves them for any program and any
+    // host behaviour): at most one lane fetches per clock, and every fetch is
+    // answered on the very next clock, to the lane that asked.
+    reg f_past = 1'b0;
+    reg [NL-1:0] f_req_q;
+    always @(posedge clk) begin
+        f_past <= 1'b1;
+        f_req_q <= fetch_req;
+    end
+    always @(*) if (rst_n) assert((fetch_req & (fetch_req - 1'b1)) == 0);
+    always @(posedge clk) if (f_past && rst_n && $past(rst_n) && f_req_q != 0) begin
+        assert(rd_valid);
+        assert(f_req_q[rd_lane]);
+    end
+`ifdef FORMAL_REACH
+    // must FAIL: lane 3 gets a record in 4-lane mode (the proof is not vacuous)
+    always @(*) assert(!(mode4 && rd_valid && rd_lane == 2'd3 && fetch_req == 0));
+`endif
+`endif
 endmodule

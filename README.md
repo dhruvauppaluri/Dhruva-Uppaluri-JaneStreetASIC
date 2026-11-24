@@ -11,11 +11,12 @@ per lane tick and no stalls.
 | | |
 |-|-|
 | Architecture and ISA | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Tutorial: add a protocol in 15 minutes | [docs/TUTORIAL.md](docs/TUTORIAL.md) |
 | Verification | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 | **Write-up (start here)** | [docs/WRITEUP.md](docs/WRITEUP.md) |
 | Status and plan | [docs/STATUS.md](docs/STATUS.md) |
 | Assembler / model / host driver | `tools/setl/` |
-| Example programs | `programs/`: UART TX/RX and auto-baud RX, SPI controller (modes 0–3) and target, I²C controller and target, JTAG, PS/2, WS2812 |
+| Example programs | `programs/`: UART TX/RX and auto-baud RX, SPI controller (modes 0–3) and target, I²C controller and target, JTAG, SWD, PS/2, WS2812, MODBUS RTU, CAN TX, USB low-speed TX/RX |
 | Formal proofs | `formal/` (programs proven on the lane RTL) |
 
 **What it can do that a fixed-function chip can't:** learn an unknown device's baud rate
