@@ -153,7 +153,7 @@ Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
 | Standard cells, SRAM build (Yosys + CMOS5L liberty) | about 9k cells, about 0.15 mm², plus 2 × 0.08 mm² SRAM |
 | Standard cells, fallback build | about 22k cells, about 0.5 mm² |
 | SRAM build (submission), Tiny Tapeout CI | GDS complete; precheck passed; LVS clean; no setup or hold violations at any corner at 30 ns (33 MHz); 24.7 % utilisation of the 8×4 area |
-| Gate-level simulation | the directed tests pass on the routed netlist with the IHP SRAM macro models |
+| Gate-level simulation | all 19 directed tests pass on the routed netlist with the IHP SRAM macro models |
 
 ## Limitations (honest list)
 
@@ -166,6 +166,8 @@ Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
   packet level exists: the host does the transactions.
 * The formal proofs are bounded (several full transactions from reset). Unbounded
   proofs need inductive invariants.
+* The submitted build signs off at 33 MHz. A 48 MHz trial misses setup only at the slow
+  corner, so exact USB low-speed rates (48/60 MHz) are not signed off.
 * No silicon exists yet. Pad timing and the CMOS5L SRAM power scheme are unproven on
   this process. That is why a fallback build exists.
 
