@@ -260,7 +260,9 @@ async def test_i2c_target(dut):
     h.check()
 
 
-SMALL_MEM = os.environ.get("SETL_MEM") == "small" or os.environ.get("GATES") == "yes"
+# The SRAM build's gate-level netlist has the full 512-word memory, so only the
+# 64-word fallback (RTL with SETL_MEM=small) skips the big programs.
+SMALL_MEM = os.environ.get("SETL_MEM") == "small"
 
 
 @cocotb.test(skip=SMALL_MEM)
