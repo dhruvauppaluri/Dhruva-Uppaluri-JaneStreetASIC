@@ -74,6 +74,10 @@ Issues found and fixed in CI so far:
   GDS, LVS, precheck, timing at every corner (slow +1.21 ns) and **gate-level simulation
   22/22**. One later 30 ns run left 9 shorts on a net crowded against an SRAM pin edge,
   so the macro halos are now 4 µm horizontal and 3 µm vertical.
+* **Submission build, run 45542613961** (48 MHz, wider halos, `test_usb_ls_48mhz`): GDS,
+  LVS, precheck, no setup or hold violations at any corner (slow +1.02 ns, typical
+  +8.36 ns), **gate-level simulation 23/23**. The same design at 30 ns (branch
+  `setl-regpins`, 33 MHz) is fully green too, with +11.0 ns of slow-corner slack: the fallback.
 
 **Decision: the 48 MHz SRAM build is the submission and lives on `main`.**
 The 64-word fallback stays on `setl-rewrite` as a backup. Its 8×4 flip-flop build ran for
@@ -93,5 +97,5 @@ more than five hours in CI and was stopped once the SRAM build was green.
 * The shift register, FIFOs and counter are 8 bits wide.
 * Host memory writes while lanes run use free clocks only. A write that finds none is
   reported (HOSTERR, `HostError`), never lost silently.
-* 48 MHz sign-off has +1.21 ns of slow-corner setup margin; silicon must confirm it.
+* 48 MHz sign-off has +1.02 ns of slow-corner setup margin; silicon must confirm it.
 * 10BASE-T needs 50 ns events: 40 MHz with 2 lanes, or a serializer.

@@ -161,9 +161,9 @@ Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
 |---|---|
 | Standard cells, SRAM build (Yosys + CMOS5L liberty) | about 9k cells, about 0.15 mm², plus 2 × 0.08 mm² SRAM |
 | Standard cells, fallback build | about 22k cells, about 0.5 mm² |
-| SRAM build (submission), Tiny Tapeout CI | GDS complete; precheck passed; LVS clean; **48 MHz** (20.8 ns): no setup or hold violations at any corner, slow corner (1.08 V, 125 °C) setup slack +1.21 ns; every lane output registered before the pads |
+| SRAM build (submission), Tiny Tapeout CI | GDS complete; precheck passed; LVS clean; **48 MHz** (20.8 ns): no setup or hold violations at any corner, slow corner (1.08 V, 125 °C) setup slack +1.02 ns (run 45542613961); every lane output registered before the pads |
 | Fallback clock | the same design at 30 ns (33 MHz): slow-corner setup slack +11.0 ns |
-| Gate-level simulation | all directed tests pass on the routed netlist with the IHP SRAM macro models |
+| Gate-level simulation | 23/23 directed tests pass on the routed 48 MHz netlist with the IHP SRAM macro models, including USB low-speed at exactly 1.5 Mb/s |
 
 ## Limitations (honest list)
 
@@ -185,7 +185,7 @@ Five independent views, detailed in [VERIFICATION.md](VERIFICATION.md):
   proofs need inductive invariants.
 * **USB low-speed rate.** At the 48 MHz sign-off clock, 2 lanes and DIV=0 give 16 ticks
   per 1.5 Mb/s bit, and `test_usb_ls_48mhz` runs exactly that configuration on the bit
-  grid. The margin is thin: the slow corner has +1.21 ns of setup slack, and the clock
+  grid. The margin is thin: the slow corner has +1.02 ns of setup slack, and the clock
   comes from the RP2350, so silicon must confirm it. USB *full* speed (12 Mb/s) is out
   of reach.
 * No silicon exists yet. Pad timing and the CMOS5L SRAM power scheme are unproven on
