@@ -112,7 +112,9 @@ class Chip:
         self.rd_lane = 0
         self.dout = 0
         self.cycle = 0
-        self.uo_q = 0       # registered output readback
+        self.uo_q = 0       # registered pins (uo is also read back into the lanes)
+        self.uio_q = 0
+        self.oe_q = 0
         self._writes = []
         self._mem_writes = []
         self._cfg_writes = []
@@ -193,6 +195,11 @@ class Chip:
 
     # ------------------------------------------------------------- outputs
     def outputs(self):
+        """The pins: (uo[6:0], uio_out, uio_oe), registered one clock after the router."""
+        return self.uo_q, self.uio_q, self.oe_q
+
+    def route(self):
+        """Combinational pin-router output (what the pin registers load)."""
         uo = 0
         uio_out = 0
         uio_oe = 0
@@ -231,7 +238,7 @@ class Chip:
     def step(self, ui_in=0, uio_in=0):
         nl = 4 if self.mode4 else 2
         invec = self.in_vec()
-        uo_now = self.outputs()[0]
+        uo_now, uio_now, oe_now = self.route()
         mem_req = None  # (lane, addr)
         updates = []
 
@@ -323,6 +330,8 @@ class Chip:
             self.mem[w] = (self.mem[w] & ~(0xFF << sh)) | (v << sh)
         self._mem_writes = []
         self.uo_q = uo_now & 0x7F
+        self.uio_q = uio_now
+        self.oe_q = oe_now
         self.s2 = self.s1
         self.s1 = (ui_in & 0xFF) | ((uio_in & 0xFF) << 8)
         self.cycle += 1
