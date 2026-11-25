@@ -87,10 +87,14 @@ module tt_um_dhruvauppaluri_setl (
     wire [6:0]  uo_int;
     // the chip's own outputs are read back one clock late: registering them
     // takes the pin router off the lane's critical path
-    reg  [6:0]  uo_q;
+    reg  [6:0]  uo_q;            // registered pins: uo is also read back into the lanes
+    reg  [7:0]  uio_q, oe_q;
     always @(posedge clk or negedge rst_n)
-        if (!rst_n) uo_q <= 7'd0;
-        else        uo_q <= uo_int;
+        if (!rst_n) begin
+            uo_q <= 7'd0; uio_q <= 8'd0; oe_q <= 8'd0;
+        end else begin
+            uo_q <= uo_int; uio_q <= uio_o; oe_q <= uio_e;
+        end
     wire [31:0] in_vec = {1'b1, 3'b000, flag, 1'b0, uo_q, s2};
 
     reg         rd_valid;
@@ -303,9 +307,11 @@ module tt_um_dhruvauppaluri_setl (
             end
     end
     assign uo_int  = uo_r;
-    assign uo_out  = {miso, uo_r};
-    assign uio_out = uio_o;
-    assign uio_oe  = uio_e;
+    // every lane output leaves the chip through a flip-flop: glitch-free pins and
+    // no pin-router logic in the pad timing paths
+    assign uo_out  = {miso, uo_q};
+    assign uio_out = uio_q;
+    assign uio_oe  = oe_q;
 
     wire _unused = &{ena, 1'b0};
 
