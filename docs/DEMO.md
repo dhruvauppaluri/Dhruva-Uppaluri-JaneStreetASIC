@@ -30,11 +30,14 @@ run draws new phases, delays and jitter.
 
 The test runs three cases:
 
-| I²C half period | bus rate at 33.33 MHz (sign-off) | host service delay | controller jitter |
-|---|---|---|---|
-| 166 clocks | 100 kHz | up to 6000 clocks (180 µs) | up to 40 clocks per phase |
-| 300 clocks | 55 kHz (100 kHz at 60 MHz) | none | none |
-| 42 clocks | ~400 kHz | up to 1500 clocks (45 µs) | up to 10 clocks per phase |
+| I²C half period | bus rate at 33.33 MHz | bus rate at 48 MHz (sign-off) | host service delay | controller jitter |
+|---|---|---|---|---|
+| 166 clocks | 100 kHz | 145 kHz | up to 6000 clocks | up to 40 clocks per phase |
+| 300 clocks | 55 kHz | 80 kHz | none | none |
+| 42 clocks | ~400 kHz | ~570 kHz | up to 1500 clocks | up to 10 clocks per phase |
+
+The simulation counts clocks, so the same cases cover 100 kHz and 400 kHz I²C at
+either clock.
 
 Each case also starts the bus at a random phase relative to the lane barrel.
 

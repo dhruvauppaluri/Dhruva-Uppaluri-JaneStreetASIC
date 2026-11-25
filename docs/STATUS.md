@@ -8,7 +8,7 @@
 | Executable spec | `tools/setl/model.py`, cycle-accurate |
 | Toolchain | assembler (images, `$readmemh`, Verilog ROMs), host driver, learning and impersonation (`learn.py`), JTAG helper |
 | Programs | UART TX/RX and auto-baud RX; SPI controller (modes 0–3) and target; I²C controller, target, sniffer and host-served target; JTAG; SWD; PS/2; WS2812; MODBUS RTU TX/RX with on-chip CRC; USB low-speed TX and RX with clock recovery, CAN 2.0A TX (generated) |
-| Directed tests | 22 (RTL, 512-word memory) / 18 + 4 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
+| Directed tests | 23 (RTL, 512-word memory) / 18 + 5 skips on the 64-word fallback memory, all with the golden model in lockstep; the IHP SRAM macro models are also simulated |
 | Random co-sim | 16 seeds, about 850k clocks, zero mismatches |
 | Formal | unbounded proof that the barrel never stalls a lane (whole chip, any program, any host traffic); bounded proofs of the UART / SPI / I²C programs on the lane RTL; reachability checks for each; also in CI |
 | Lint | Verilator `-Wall` clean |
@@ -21,7 +21,7 @@
 | the I²C capture depended on phase and on a fast host | FIFOs 4 → 16 deep, with full level registers (0xC0+2L); an SCL/SDA sampling race fixed in the I²C programs | `test_learn_and_impersonate` sweep |
 | impersonation was only checked on its training traffic | held-out session from a second, independently timed controller, against answers recorded from the real sensor | [DEMO.md](DEMO.md) |
 | the SPI target could not share MISO | tri-state OMAP mode (bit 7: the next slot is the enable) | `test_spi_target_shared_bus` |
-| the USB rate claim | the docs now say 0.83 Mb/s at the 33 MHz sign-off; 1.5 Mb/s needs 48/60 MHz | [WRITEUP.md](WRITEUP.md) limitations |
+| the USB rate claim | the build now signs off at 48 MHz, where 16-tick bits are exactly 1.5 Mb/s (`test_usb_ls_48mhz`) | [WRITEUP.md](WRITEUP.md) |
 
 ## Physical design
 
@@ -68,21 +68,24 @@ Issues found and fixed in CI so far:
   against the original by formal assertions). That work closed 48 MHz on the smaller
   design.
 
-**Decision (rule from the plan): the SRAM build is the submission and lives on `main`.**
+* 48 MHz with every feature: the first attempt also failed on output-pad paths (flop →
+  pin router → `uio_oe`, −1.49 ns), and on routing shorts at density 45 %. Fixes: every
+  lane output is registered before its pad, and placement density is 38 %. Run 45529281508:
+  GDS, LVS, precheck, timing at every corner (slow +1.21 ns) and **gate-level simulation
+  22/22**. One later 30 ns run left 9 shorts on a net crowded against an SRAM pin edge,
+  so the macro halos are now 4 µm horizontal and 3 µm vertical.
+
+**Decision: the 48 MHz SRAM build is the submission and lives on `main`.**
 The 64-word fallback stays on `setl-rewrite` as a backup. Its 8×4 flip-flop build ran for
 more than five hours in CI and was stopped once the SRAM build was green.
 
 ## Next
 
-1. Faster clock. A 48 MHz trial (branch `setl-sram-48mhz`, run 45428121332) was clean
-   for routing DRC, LVS and hold, and failed only on setup at the slow corner
-   (1.08 V, 125 °C). The submitted build therefore signs off at 33 MHz. Exact USB
-   low-speed timing (48 or 60 MHz) needs the critical path shortened first, for example
-   by registering the output readback into the input vector.
-3. USB: test the receiver against a USB LS decoder-driven stimulus with jitter and frequency offset.
-4. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
-5. Bring-up on the demo board: `tools/setl/rp2350.py` (MicroPython transport) is written
-   but not yet run on hardware.
+1. 60 MHz: not planned. 48 MHz already gives exact USB low-speed timing.
+2. USB: test the receiver against a USB LS decoder-driven stimulus with jitter and frequency offset.
+3. Coverage-directed random program generation, and unbounded (inductive) formal proofs.
+4. Bring-up: FPGA + RP2350 first (`docs/BRINGUP.md`, `examples/selftest.py`,
+   `examples/learn_demo.py`), then the demo board once silicon exists.
 
 ## Known limitations
 
@@ -90,5 +93,5 @@ more than five hours in CI and was stopped once the SRAM build was green.
 * The shift register, FIFOs and counter are 8 bits wide.
 * Host memory writes while lanes run use free clocks only. A write that finds none is
   reported (HOSTERR, `HostError`), never lost silently.
-* USB low-speed at 1.5 Mb/s needs 48/60 MHz; the build signs off at 33 MHz (0.83 Mb/s).
+* 48 MHz sign-off has +1.21 ns of slow-corner setup margin; silicon must confirm it.
 * 10BASE-T needs 50 ns events: 40 MHz with 2 lanes, or a serializer.

@@ -681,6 +681,49 @@ async def test_usb_ls_tx(dut):
 
 
 @cocotb.test(skip=SMALL_MEM)
+async def test_usb_ls_48mhz(dut):
+    """USB low-speed at the exact 1.5 Mb/s of the 48 MHz build: 2 lanes, DIV=0,
+    16 ticks per bit (usb_ls_tx_48mhz.setl).  An independent decoder checks every
+    edge on the 32-clock bit grid, and lane 1 receives the same packets on chip
+    (clock recovery with TA=11, TB=6) and checks the CRC.  A whole packet fits in
+    the 16-deep TX FIFO, so the host never has to keep up mid-packet."""
+    h, host = await setup(dut)
+    with open(os.path.join(PROG, "usb_ls_tx_48mhz.setl")) as f:
+        tx_img, tx_sym, _ = assemble(f.read())
+    with open(os.path.join(PROG, "usb_ls_rx.setl")) as f:
+        rx_img, rx_sym, _ = assemble(".org 256\n" + f.read())
+    await host.load_image({**tx_img, **rx_img})
+    usb = 6 << 4
+    await host.config_lane(0, start=tx_sym["usb_ls_tx"], ta=16 - 7, tb=16 - 6, div=0,
+                           outmap=["uo0", "uo1"], outinit=0b0010, ctrl=isa.CTRL_CRC | usb)
+    await host.config_lane(1, start=rx_sym["usb_ls_rx"], ta=16 - 5, tb=6, div=0,
+                           ctrl=isa.CTRL_CRC | isa.CTRL_CRC_IN | usb)
+    await host.config_crc(0, poly=0xA001, init=0xFFFF)
+    await host.config_crc(1, poly=0xA001, init=0xFFFF, residue=0xB001)
+    await host.run(0b11)
+    period = 16 * 2                               # 16 ticks/bit, 2-lane barrel, DIV=0: 32 clocks
+    PID = lambda p: p | ((~p & 0xF) << 4)
+    data = [0x80, 0x06, 0x00, 0x01, 0xFF, 0xFF, 0x40, 0x00]
+    for pid, payload, hs in ((PID(0x3), data, False), (PID(0x2), [], True), (PID(0xB), [0x5A], False)):
+        await host.write_reg(isa.G_HFLAG, 1 if hs else 0)
+        cap = cocotb.start_soon(bfm.usb_ls_capture(h, dp=0, dm=1, period=period))
+        await host.push(0, [pid] + payload)       # the whole packet fits in the FIFO
+        pkt, problems = await cap
+        assert not problems, problems
+        expect = [pid] + payload
+        if not hs:
+            crc = bfm.usb_crc16(payload)
+            expect += [crc & 0xFF, crc >> 8]
+        assert pkt == expect, ([hex(x) for x in pkt], [hex(x) for x in expect])
+        await ClockCycles(dut.clk, 6 * period)
+        n = (await host.status(1))["rx"]
+        got = list(await host.pop(1, n))
+        assert got == [0x80] + expect, ([hex(x) for x in got], [hex(x) for x in [0x80] + expect])
+        assert (await host.status(1))["event"] == 0, "on-chip receiver reported a CRC error"
+    h.check()
+
+
+@cocotb.test(skip=SMALL_MEM)
 async def test_usb_ls_loopback(dut):
     """Lane 0 transmits USB low-speed packets; lane 1 receives them through the
     on-chip readback with clock recovery, NRZI decoding, un-stuffing and a CRC

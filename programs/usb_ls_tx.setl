@@ -14,9 +14,11 @@
 ; Lane setup: CTRL = CTRL_CRC | (6 << 4) (stuff after six 1s, counted on the sent
 ; bits); CRC poly 0xA001, init 0xFFFF; TA = BIT - 7, TB = BIT - 6 (BIT = ticks per
 ; bit: 20 at 60 MHz, 16 at 48 MHz, 2-lane mode); slots 0 = D+, 1 = D-.
-; Usage: gen_usb_ls_tx.py [BIT]  (only the EOP lengths depend on it)
+; Usage: gen_usb_ls_tx.py [BIT [OUT]]  (only the EOP lengths depend on BIT;
+; usb_ls_tx_48mhz.setl is BIT=16: 1.5 Mb/s at a 48 MHz clock, 2 lanes, DIV=0)
 ; The host pushes PID, then the data bytes, and keeps the FIFO fed; set HFLAG for
 ; a handshake packet (PID only, no CRC).
+; BIT = 20 ticks per bit
 .lane usb_ls_tx
 U_IDLE:      set 0=0 1=1 wait txready                     goto U_ST1
 U_ST1:       cnt=8                                        goto U_ST2

@@ -4,10 +4,12 @@ ASM = PYTHONPATH=../tools python3 -m setl.asm
 SRC = $(wildcard *.setl)
 OUT = $(SRC:%.setl=build/%.json)
 
-all: usb_ls_tx.setl usb_ls_rx.setl can_tx.setl $(OUT)
+all: usb_ls_tx.setl usb_ls_tx_48mhz.setl usb_ls_rx.setl can_tx.setl $(OUT)
 
 usb_ls_tx.setl: gen_usb_ls_tx.py
 	python3 gen_usb_ls_tx.py
+usb_ls_tx_48mhz.setl: gen_usb_ls_tx.py
+	python3 gen_usb_ls_tx.py 16 usb_ls_tx_48mhz.setl
 usb_ls_rx.setl: gen_usb_ls_rx.py
 	python3 gen_usb_ls_rx.py
 can_tx.setl: gen_can_tx.py

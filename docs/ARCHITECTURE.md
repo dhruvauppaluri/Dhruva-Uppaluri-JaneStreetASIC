@@ -40,7 +40,9 @@ the RTL is checked against it every cycle (see `VERIFICATION.md`).
   can change state on every one of its ticks**, so timing is fully deterministic: no stalls,
   no arbitration, and no dependence on what the other lanes are doing.
 * A **tick** is one lane step. The tick rate is `clk / (N × (DIV+1))`, where N is 2 or 4.
-  At 60 MHz with 2 lanes that is 30 MHz, or 33 ns per tick.
+  At the 48 MHz sign-off clock with 2 lanes that is 24 MHz, or 41.7 ns per tick (16 ticks
+  = one USB low-speed bit). Every lane output leaves the chip through a flip-flop, so pins
+  change one clock after the state that sets them, glitch-free.
 * Every state exit fetches, including a transition back to the same state, which
   re-runs its entry action. The record returns before the lane's next slot, so this
   costs nothing visible and keeps a next-state compare off the fetch path.
