@@ -61,6 +61,13 @@ Issues found and fixed in CI so far:
   is not enabled on the repository (Settings → Pages → Source: GitHub Actions). It is
   not part of the submission.
 
+* Review-fix run (45506165051): the 16-deep FIFOs added about 1,000 flip-flops, and
+  global routing reported congestion. Setup then failed at 30 endpoints at the slow
+  corner, even at 30 ns. Fixed by merging the timing work from `setl-fast` (registered
+  output readback, fetch on every state exit, a fast branch-condition network checked
+  against the original by formal assertions). That work closed 48 MHz on the smaller
+  design.
+
 **Decision (rule from the plan): the SRAM build is the submission and lives on `main`.**
 The 64-word fallback stays on `setl-rewrite` as a backup. Its 8×4 flip-flop build ran for
 more than five hours in CI and was stopped once the SRAM build was green.

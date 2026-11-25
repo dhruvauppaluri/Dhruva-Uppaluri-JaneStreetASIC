@@ -1,0 +1,17 @@
+; Board self-test, no external parts: lane 0 is a UART transmitter on uo1, lane 1 a
+; UART receiver that listens to uo1 through the on-chip output readback.
+; TA = ticks per bit - 1 on both lanes; lane 1 TB = round(1.5 * bit) - 2.
+; Used by examples/selftest.py.
+.pin rx uo1
+.in rx
+.lane st_tx
+tx_idle:  wait txready                                     goto tx_start
+tx_start: pop set 0=0 cnt=8 timer=TA wait timer            goto tx_bit
+tx_bit:   out 0 shift dec timer=TA wait timer              if cnt0 goto tx_stop else tx_bit
+tx_stop:  set 0=1 timer=TA wait timer                      if txready goto tx_start else tx_idle
+.lane st_rx
+rx_idle:  cnt=8 wait !pin                                  goto rx_first
+rx_first: timer=TB wait timer                              goto rx_bit
+rx_bit:   shift dec timer=TA wait timer                    if cnt0 goto rx_stop else rx_bit
+rx_stop:  push                                             if pin goto rx_idle else rx_ferr
+rx_ferr:  event wait pin                                   goto rx_idle

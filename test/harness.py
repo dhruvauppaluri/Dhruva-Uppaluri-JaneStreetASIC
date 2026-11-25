@@ -93,6 +93,7 @@ class Harness:
             m.slot = int(up.slot.value)
             m.s1 = int(up.s1.value)
             m.s2 = int(up.s2.value)
+            m.uo_q = int(up.uo_q.value)
         muo, mout, moe = m.outputs()
         # uo[7] is host MISO (SPI shell, not modelled); compare only driven uio bits
         bad = ((muo ^ self.uo) & 0x7F) or moe != self.uio_oe or ((mout ^ self.uio_out) & moe)

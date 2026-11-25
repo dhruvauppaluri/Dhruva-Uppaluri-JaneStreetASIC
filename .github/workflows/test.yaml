@@ -34,6 +34,11 @@ jobs:
           make SETL_MEM=small COCOTB_TEST_MODULES=test COCOTB_RESULTS_FILE=results_small.xml
           python -m cocotb_tools.check_results results_small.xml
 
+      - name: Board self-test (dry run on the golden model)
+        run: |
+          PYTHONPATH=tools python3 examples/selftest.py --model | tee selftest.log
+          grep -q '"summary": "5/5 passed"' selftest.log
+
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
