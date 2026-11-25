@@ -36,6 +36,13 @@ jobs:
             head -c 12000 "$f"
           done
           for f in $(find logs -path "*stapostpnr*" -name "summary.rpt" | sort); do echo "=== $f"; cat "$f"; done
+      - name: Routing DRC report
+        run: |
+          find logs -iname "*drc*" | sort
+          for f in $(find logs -path "*detailedrouting*" \( -iname "*.drc" -o -iname "*drc*.rpt" \) | sort); do
+            echo "=================== $f"
+            head -c 20000 "$f"
+          done
 
   precheck:
     needs: gds
